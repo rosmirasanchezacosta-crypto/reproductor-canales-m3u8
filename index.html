@@ -1754,10 +1754,12 @@ if (tipoCont === 'hls') {
     video.removeAttribute('muted');
     video.setAttribute('playsinline', '');
 
-    overlay.style.display = 'flex';
+    overlay.style.display = 'none';
 
     video.volume = 1;
     syncVolumeVisuals(1, false);
+
+    ejecutarContenidoReal();
 }
 
 // Sincronizar estado inicial de volumen
