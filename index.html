@@ -1749,12 +1749,15 @@ document.getElementById('btn-entrar').onclick = function() {
 // INICIO AUTOMÁTICO PARA STREAMS HLS (.m3u8)
 // Los navegadores normalmente solo permiten autoplay si el video comienza silenciado.
 if (tipoCont === 'hls') {
-    video.muted = true;
-    video.defaultMuted = true;
-    video.setAttribute('muted', '');
+    video.muted = false;
+    video.defaultMuted = false;
+    video.removeAttribute('muted');
     video.setAttribute('playsinline', '');
-    overlay.style.display = 'none';
-    ejecutarContenidoReal();
+
+    overlay.style.display = 'flex';
+
+    video.volume = 1;
+    syncVolumeVisuals(1, false);
 }
 
 // Sincronizar estado inicial de volumen
