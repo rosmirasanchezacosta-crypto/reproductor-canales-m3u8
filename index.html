@@ -634,11 +634,32 @@ var video = document.getElementById("video"),
 
 // ===== Parámetros URL =====
 var params = new URLSearchParams(window.location.search + window.location.hash.replace('#', '&'));
-var videoUrl = params.get("video") || "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+
+// Lee el parámetro "video" en bruto, preservando los & internos del enlace del MP4
+function getVideoParam() {
+    var raw = window.location.search;
+    if (raw.charAt(0) === '?') raw = raw.substring(1);
+    var hash = window.location.hash;
+    if (hash.charAt(0) === '#') hash = hash.substring(1);
+    raw = raw + (raw && hash ? '&' : '') + hash;
+
+    var idx = raw.indexOf('video=');
+    if (idx === -1) return null;
+    var rest = raw.substring(idx + 'video='.length);
+    var known = ['ad', 'subtitle', 'audio', 'audios', 'subtitles'];
+    var cutIdx = rest.length;
+    for (var i = 0; i < known.length; i++) {
+        var pos = rest.indexOf('&' + known[i] + '=');
+        if (pos !== -1 && pos < cutIdx) cutIdx = pos;
+    }
+    var val = rest.substring(0, cutIdx);
+    try { return decodeURIComponent(val); } catch(e) { return val; }
+}
+
+var videoUrl = getVideoParam() || "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
     adUrl = params.get("ad"),
     subUrl = params.get("subtitle"),
     audioUrl = params.get("audio");
-
 function parseTrackList(raw) {
     if (!raw) return [];
     return raw.split(',').map(function(item) {
