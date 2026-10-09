@@ -703,6 +703,8 @@ function langName(code) {
 
 // ===== Estado =====
 var hlsPlayer = null, dashPlayer = null;
+// Evita mostrar el botón central antes de que el video haya comenzado a reproducirse.
+var playbackStarted = false;
 var currentAudioIdx = -1, currentSubIdx = -1;
 var availableAudio = [], availableSubs = [];
 var menuPage = 'main';
@@ -753,16 +755,36 @@ function togglePlay() {
 playBtn.onclick = togglePlay;
 centerPlay.onclick = togglePlay;
 
-video.onplay = function() {
+// El botón central solo aparece después de que el video haya empezado y luego se pause.
+video.addEventListener("play", function() {
     centerPlay.classList.remove("visible");
     playBtn.innerText = "⏸";
     playBtn.classList.add("paused-frame");
-};
-video.onpause = function() {
-    centerPlay.classList.add("visible");
+});
+
+video.addEventListener("playing", function() {
+    playbackStarted = true;
+    centerPlay.classList.remove("visible");
+    playBtn.innerText = "⏸";
+    playBtn.classList.add("paused-frame");
+});
+
+video.addEventListener("pause", function() {
+    // Cambiar el src o inicializar HLS/DASH puede disparar una pausa antes del primer play.
+    if (playbackStarted && !video.ended) {
+        centerPlay.classList.add("visible");
+    } else {
+        centerPlay.classList.remove("visible");
+    }
     playBtn.innerText = "▶";
     playBtn.classList.add("paused-frame");
-};
+});
+
+video.addEventListener("ended", function() {
+    centerPlay.classList.remove("visible");
+    playBtn.innerText = "▶";
+    playBtn.classList.add("paused-frame");
+});
 
 // ===== Sincronización Visual de Volumen =====
 function syncVolumeVisuals(vol, isMuted) {
@@ -1529,7 +1551,14 @@ centerPlay.addEventListener('mouseleave', function() { mouseOverUI = false; });
 
 function showAllControls() {
     controls.classList.add("show");
-    if (video.paused) centerPlay.classList.add("visible");
+
+    // No enseñar el botón central durante la carga inicial ni mientras reproduce.
+    if (playbackStarted && video.paused && !video.ended) {
+        centerPlay.classList.add("visible");
+    } else {
+        centerPlay.classList.remove("visible");
+    }
+
     clearTimeout(hideTimer);
     hideTimer = setTimeout(function() {
         if (!mouseOverUI && !video.paused) {
@@ -1590,10 +1619,12 @@ document.addEventListener('keydown', function(e) {
 // ============================================================
 
 function ejecutarContenidoReal() {
+    // Reiniciar el estado para cada contenido: no mostrar Play central durante la carga.
+    playbackStarted = false;
+    centerPlay.classList.remove("visible");
     wrapperExterno.style.display = 'none';
     video.style.display = 'none';
     controls.style.display = 'none';
-    centerPlay.classList.remove("visible");
     
     if (tipoCont === "drive") {
         wrapperExterno.style.display = 'block';
@@ -1604,7 +1635,6 @@ function ejecutarContenidoReal() {
     } else if (tipoCont === "mp4") {
         video.style.display = 'block';
         controls.style.display = 'block';
-        centerPlay.classList.add("visible");
         video.src = videoUrl;
         video.play().catch(function(){});
         detectAudioTracks();
@@ -1615,7 +1645,6 @@ function ejecutarContenidoReal() {
     } else if (tipoCont === "hls") {
         video.style.display = 'block';
         controls.style.display = 'block';
-        centerPlay.classList.add("visible");
         if (Hls.isSupported()) {
             hlsPlayer = new Hls({
                 maxBufferLength: 30,
@@ -1672,7 +1701,6 @@ function ejecutarContenidoReal() {
     } else if (tipoCont === "dash") {
         video.style.display = 'block';
         controls.style.display = 'block';
-        centerPlay.classList.add("visible");
         dashPlayer = dashjs.MediaPlayer().create();
         dashPlayer.initialize(video, videoUrl, true);
         dashPlayer.updateSettings({ streaming: { text: { defaultEnabled: true } } });
