@@ -39,13 +39,33 @@ video, iframe {
     left: 0; 
 }
 
-/* Capa de la Intro (Superpuesta para efecto Netflix sin delay en móviles) */
+/* ============================================================
+   CAPAS DE TRANSICIÓN Y PREPARACIÓN (ESTILO NETFLIX PERFECTO)
+   ============================================================ */
+
+/* Video de Intro (Capa 50) */
 #videoIntro {
     z-index: 50;
-    transition: opacity 0.6s ease-in-out;
+    transition: opacity 0.5s ease-in-out;
     opacity: 1;
 }
 #videoIntro.fade-out {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Cortina Negra de Amortiguación (Capa 40) - Oculta la preparación en móviles */
+#blackScreen {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: #000000;
+    z-index: 40;
+    display: none;
+    transition: opacity 0.4s ease-in-out;
+    opacity: 1;
+}
+#blackScreen.fade-out {
     opacity: 0;
     pointer-events: none;
 }
@@ -561,7 +581,10 @@ video, iframe {
 
     <div class="video-wrapper" id="wrapper-externo"><div id="bloqueo-flecha"></div><iframe id="videoFrame" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe></div>
     
-    <!-- VIDEO DE INTRO (Capa superior superpuesta para móviles) -->
+    <!-- CORTINA NEGRA DE TRANSICIÓN (Oculta la preparación del video en móviles) -->
+    <div id="blackScreen"></div>
+
+    <!-- VIDEO DE INTRO (Capa superior) -->
     <video id="videoIntro" style="display: none;" playsinline webkit-playsinline src="https://raw.githubusercontent.com/rosmirasanchezacosta-crypto/reproductor-canales-m3u8/main/intro-negra.mp4"></video>
 
     <!-- VIDEO PRINCIPAL DE LA PELÍCULA -->
@@ -606,6 +629,7 @@ video, iframe {
 
 var video = document.getElementById("video"),
     videoIntro = document.getElementById("videoIntro"),
+    blackScreen = document.getElementById("blackScreen"),
     playBtn = document.getElementById("playBtn"),
     muteBtn = document.getElementById("muteBtn"),
     fullscreenBtn = document.getElementById("fullscreenBtn"),
@@ -759,6 +783,13 @@ video.addEventListener("playing", function() {
     centerPlay.classList.remove("visible");
     playBtn.innerText = "⏸";
     playBtn.classList.add("paused-frame");
+
+    // REVELACIÓN ELEGANTE: La cortina negra solo desaparece cuando el video de la película está corriendo activamente
+    blackScreen.classList.add('fade-out');
+    setTimeout(function() {
+        blackScreen.style.display = 'none';
+        blackScreen.classList.remove('fade-out');
+    }, 400);
 });
 
 video.addEventListener("pause", function() {
@@ -1576,7 +1607,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ============================================================
-// CARGA Y PREPARACIÓN DEL CONTENIDO REAL EN SEGUNDO PLANO
+// CARGA Y PREPARACIÓN DEL CONTENIDO REAL (DRIVE + MP4 + HLS + DASH)
 // ============================================================
 
 function prepararPeliculaEnSegundoPlano() {
@@ -1584,16 +1615,32 @@ function prepararPeliculaEnSegundoPlano() {
     centerPlay.classList.remove("visible");
     wrapperExterno.style.display = 'none';
     
-    if (tipoCont === "drive") {
+    // GOOGLE DRIVE E IFRAMES (Ahora incluidos dentro de la secuencia)
+    if (tipoCont === "drive" || tipoCont === "embed") {
         wrapperExterno.style.display = 'block';
-        iframe.removeAttribute('sandbox');
-        bloqueoFlecha.style.display = 'block';
-        if (videoUrl.includes("/view")) videoUrl = videoUrl.replace("/view", "/preview");
-        iframe.src = videoUrl + (videoUrl.includes('?') ? '&' : '?') + 'autoplay=1';
-    } else if (tipoCont === "mp4") {
+        if (tipoCont === "drive") {
+            iframe.removeAttribute('sandbox');
+            bloqueoFlecha.style.display = 'block';
+            if (videoUrl.includes("/view")) videoUrl = videoUrl.replace("/view", "/preview");
+            iframe.src = videoUrl + (videoUrl.includes('?') ? '&' : '?') + 'autoplay=1';
+        } else {
+            iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin');
+            iframe.src = videoUrl;
+        }
+        // Para Iframe / Drive: Revelar suavemente tras 1.5 segundos
+        setTimeout(function() {
+            blackScreen.classList.add('fade-out');
+            setTimeout(function() {
+                blackScreen.style.display = 'none';
+                blackScreen.classList.remove('fade-out');
+            }, 400);
+        }, 1500);
+    } 
+    // REPRODUCTOR DE VIDEO DIRECTO (MP4, HLS, DASH)
+    else if (tipoCont === "mp4") {
         video.style.display = 'block';
         video.src = videoUrl;
-        video.load(); // Se precarga mientras corre la intro
+        video.load();
         detectAudioTracks();
         detectSubtitleTracks();
         parsedSubs.forEach(function(ps) {
@@ -1647,30 +1694,29 @@ function prepararPeliculaEnSegundoPlano() {
                 loadExternalSubtitleUrl(ps.url, ps.label);
             });
         }, 1500);
-    } else {
-        wrapperExterno.style.display = 'block';
-        iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin');
-        iframe.src = videoUrl;
     }
 }
 
 function iniciarPeliculaTransicionElegante() {
+    // 1. Activar cortina negra mientras se remueve la intro
+    blackScreen.style.display = 'block';
     videoIntro.classList.add('fade-out');
     
     setTimeout(function() {
         videoIntro.style.display = 'none';
         videoIntro.pause();
         
+        // 2. Disparar reproducción de la película por debajo de la cortina negra
         if (tipoCont === 'mp4' || tipoCont === 'hls' || tipoCont === 'dash') {
             controls.style.display = 'block';
             video.play().catch(function(){});
             showAllControls();
         }
-    }, 500); // 500ms de desvanecimiento suave a negro
+    }, 500);
 }
 
 // ============================================================
-// SISTEMA DE REPRODUCCIÓN DE INTRO OBLIGATORIA (ESTILO NETFLIX)
+// SISTEMA DE REPRODUCCIÓN DE INTRO OBLIGATORIA
 // ============================================================
 
 function iniciarSecuenciaIntro() {
@@ -1678,11 +1724,9 @@ function iniciarSecuenciaIntro() {
     videoIntro.classList.remove('fade-out');
     videoIntro.currentTime = 0;
     
-    // 1. Iniciar intro
     var p = videoIntro.play();
     if (p !== undefined) {
         p.catch(function() {
-            // Si el móvil bloquea el autoplay con sonido, silenciamos e intentamos
             videoIntro.muted = true;
             videoIntro.play().catch(function() {
                 iniciarPeliculaTransicionElegante();
@@ -1690,10 +1734,8 @@ function iniciarSecuenciaIntro() {
         });
     }
 
-    // 2. Precargar película en segundo plano mientras corre la intro
     prepararPeliculaEnSegundoPlano();
 
-    // 3. Control de desvanecimiento (Fade Out de 0.5s al final de la intro)
     videoIntro.ontimeupdate = function() {
         if (videoIntro.duration && (videoIntro.duration - videoIntro.currentTime) <= 0.6) {
             if (!videoIntro.dataset.fading) {
@@ -1703,7 +1745,6 @@ function iniciarSecuenciaIntro() {
         }
     };
 
-    // 4. Cuando la intro termina, dar paso a la película sin delay
     videoIntro.onended = function() {
         iniciarPeliculaTransicionElegante();
     };
@@ -1757,7 +1798,6 @@ document.getElementById('btn-entrar').onclick = function() {
     }
 };
 
-// Sincronizar estado inicial de volumen
 syncVolumeVisuals(video.volume, video.muted);
 </script>
 </body>
