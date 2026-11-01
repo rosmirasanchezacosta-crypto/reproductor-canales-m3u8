@@ -38,6 +38,18 @@ video, iframe {
     top: 0; 
     left: 0; 
 }
+
+/* Capa de la Intro (Superpuesta para efecto Netflix sin delay en móviles) */
+#videoIntro {
+    z-index: 50;
+    transition: opacity 0.6s ease-in-out;
+    opacity: 1;
+}
+#videoIntro.fade-out {
+    opacity: 0;
+    pointer-events: none;
+}
+
 #bloqueo-flecha { 
     position: absolute; 
     top: 0; right: 0; 
@@ -179,7 +191,6 @@ video, iframe {
     margin-left: 8px; 
 }
 
-/* Botón unificado de publicidad y saltar anuncio */
 #adBtn {
     position: absolute;
     bottom: 80px;
@@ -231,9 +242,6 @@ video, iframe {
     50% { box-shadow: 0 0 28px rgba(188, 19, 254, 0.85); }
 }
 
-/* ============================================================
-   CONTROL DE VOLUMEN VERTICAL FLOTANTE
-   ============================================================ */
 .volume-container {
     position: relative;
     display: inline-flex;
@@ -261,7 +269,6 @@ video, iframe {
     box-sizing: border-box;
 }
 
-/* Puente invisible para que el mouse no pierda foco al subir */
 .volume-slider-wrapper::after {
     content: '';
     position: absolute;
@@ -279,7 +286,7 @@ video, iframe {
 #volumeSlider {
     -webkit-appearance: none;
     appearance: none;
-    writing-mode: bt-lr; /* Orientación vertical estándar */
+    writing-mode: bt-lr;
     -webkit-appearance: slider-vertical;
     width: 6px;
     height: 100px;
@@ -291,7 +298,6 @@ video, iframe {
     padding: 0;
 }
 
-/* Fallback para navegadores que rotan el input */
 @supports not (-webkit-appearance: slider-vertical) {
     #volumeSlider {
         transform: rotate(-90deg);
@@ -329,7 +335,6 @@ video, iframe {
     box-shadow: 0 0 10px rgba(188, 19, 254, 0.9);
 }
 
-/* Settings */
 .settings-container {
     position: relative;
     display: inline-block;
@@ -418,7 +423,6 @@ video, iframe {
     margin: 4px 0;
 }
 
-/* Badges */
 .lang-badge {
     position: absolute;
     top: 16px; left: 16px;
@@ -446,7 +450,6 @@ video, iframe {
     border: 1px solid rgba(255,215,0,0.25);
 }
 
-/* Toast */
 .toast-msg {
     position: absolute;
     top: 50%; left: 50%;
@@ -467,7 +470,6 @@ video, iframe {
     opacity: 1;
 }
 
-/* Speed */
 .speed-btn {
     font-size: 12px;
     color: rgba(255,255,255,0.6);
@@ -479,7 +481,6 @@ video, iframe {
 }
 .speed-btn:hover { color: #bc13fe; background: rgba(188,19,254,0.1); }
 
-/* Logo en la parte superior izquierda */
 .player-logo {
     position: absolute;
     top: 18px;
@@ -498,16 +499,12 @@ video, iframe {
     filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.85));
 }
 
-/* ============================================================
-   RESPONSIVE MÓVIL — paneles compactos acordes a la pantalla
-   ============================================================ */
 @media(max-width:600px){
     .btn { font-size: 16px; min-width: 36px; height: 36px; margin-right: 8px; }
     .speed-btn { font-size: 11px; padding: 3px 6px; margin-right: 8px; }
     .controls { padding: 10px 10px 12px; }
     .progress { margin-bottom: 8px; }
 
-    /* Menú de configuración: se adapta al ancho de pantalla sin desbordar */
     .settings-menu {
         min-width: 0;
         width: calc(100vw - 24px);
@@ -523,20 +520,16 @@ video, iframe {
     .settings-item .s-value { font-size: 11px; margin-left: 8px; }
     .settings-item .s-check { font-size: 13px; }
 
-    /* Cápsula de volumen más compacta */
     .volume-slider-wrapper { width: 32px; height: 100px; padding: 8px 0; }
     #volumeSlider { height: 80px; }
     .volume-container { margin-right: 8px; }
 
-    /* Botón de anuncio más pequeño */
     #adBtn { bottom: 70px; right: 12px; padding: 9px 16px; font-size: 12px; }
 
-    /* Toast y play central compactos */
     .toast-msg { font-size: 13px; padding: 10px 18px; }
     .center-play { width: 64px; height: 64px; }
     .center-play::before { border-left: 20px solid white; border-top: 12px solid transparent; border-bottom: 12px solid transparent; }
 
-    /* Logo */
     .player-logo { top: 12px; left: 12px; }
     .player-logo img { height: 34px; max-width: 120px; }
 }
@@ -567,7 +560,13 @@ video, iframe {
     <button id="adBtn" class="ad-counting" style="display: none;"><span id="adText">Publicidad · 21s</span></button>
 
     <div class="video-wrapper" id="wrapper-externo"><div id="bloqueo-flecha"></div><iframe id="videoFrame" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe></div>
+    
+    <!-- VIDEO DE INTRO (Capa superior superpuesta para móviles) -->
+    <video id="videoIntro" style="display: none;" playsinline webkit-playsinline src="https://raw.githubusercontent.com/rosmirasanchezacosta-crypto/reproductor-canales-m3u8/main/intro-negra.mp4"></video>
+
+    <!-- VIDEO PRINCIPAL DE LA PELÍCULA -->
     <video id="video" style="display: none;" playsinline></video>
+    
     <button id="centerPlay" class="center-play"></button>
     <div class="lang-badge" id="langBadge"></div>
     <div class="sub-badge" id="subBadge">CC</div>
@@ -605,10 +604,8 @@ video, iframe {
 // KikeFlix Player PRO
 // ============================================================
 
-var INTRO_URL = "https://raw.githubusercontent.com/rosmirasanchezacosta-crypto/reproductor-canales-m3u8/main/intro-negra.mp4";
-var introPlayed = false;
-
 var video = document.getElementById("video"),
+    videoIntro = document.getElementById("videoIntro"),
     playBtn = document.getElementById("playBtn"),
     muteBtn = document.getElementById("muteBtn"),
     fullscreenBtn = document.getElementById("fullscreenBtn"),
@@ -638,7 +635,6 @@ var video = document.getElementById("video"),
 // ===== Parámetros URL =====
 var params = new URLSearchParams(window.location.search + window.location.hash.replace('#', '&'));
 
-// Lee el parámetro "video" en bruto, preservando los & internos del enlace del MP4
 function getVideoParam() {
     var raw = window.location.search;
     if (raw.charAt(0) === '?') raw = raw.substring(1);
@@ -663,6 +659,7 @@ var videoUrl = getVideoParam() || "https://test-streams.mux.dev/x36xhzz/x36xhzz.
     adUrl = params.get("ad"),
     subUrl = params.get("subtitle"),
     audioUrl = params.get("audio");
+
 function parseTrackList(raw) {
     if (!raw) return [];
     return raw.split(',').map(function(item) {
@@ -688,7 +685,6 @@ if (subUrl && !parsedSubs.some(function(s) { return s.url === subUrl; })) {
     parsedSubs.unshift({ label: 'Subtítulo', url: subUrl });
 }
 
-// ===== Idiomas =====
 var LANG_NAMES = {
     es:'Español', en:'English', pt:'Português', fr:'Français', de:'Deutsch',
     it:'Italiano', ja:'日本語', zh:'中文', ko:'한국어', ar:'العربية', ru:'Русский',
@@ -704,9 +700,7 @@ function langName(code) {
     return LANG_NAMES[code] || LANG_NAMES[code.split('-')[0]] || code;
 }
 
-// ===== Estado =====
 var hlsPlayer = null, dashPlayer = null;
-// Evita mostrar el botón central antes de que el video haya comenzado a reproducirse.
 var playbackStarted = false;
 var currentAudioIdx = -1, currentSubIdx = -1;
 var availableAudio = [], availableSubs = [];
@@ -716,7 +710,6 @@ var SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 var externalAudioEl = null;
 var lastNonZeroVolume = 1;
 
-// ===== Tipo de contenido =====
 function tipo(u) {
     if (!u) return "vacio";
     var l = u.toLowerCase();
@@ -728,7 +721,6 @@ function tipo(u) {
 }
 var tipoCont = tipo(videoUrl);
 
-// ===== Toast =====
 var toastTimer = null;
 function showToast(msg, dur) {
     dur = dur || 1500;
@@ -738,7 +730,6 @@ function showToast(msg, dur) {
     toastTimer = setTimeout(function() { toastMsg.classList.remove('visible'); }, dur);
 }
 
-// ===== Formato tiempo =====
 function formatTime(s) {
     if (isNaN(s)) return "0:00";
     var m = Math.floor(s / 60);
@@ -746,7 +737,6 @@ function formatTime(s) {
     return m + ":" + (sec < 10 ? "0" : "") + sec;
 }
 
-// ===== Toggle play/pause =====
 function togglePlay() {
     if (video.paused) {
         video.play().catch(function(){});
@@ -758,7 +748,6 @@ function togglePlay() {
 playBtn.onclick = togglePlay;
 centerPlay.onclick = togglePlay;
 
-// El botón central solo aparece después de que el video haya empezado y luego se pause.
 video.addEventListener("play", function() {
     centerPlay.classList.remove("visible");
     playBtn.innerText = "⏸";
@@ -773,7 +762,6 @@ video.addEventListener("playing", function() {
 });
 
 video.addEventListener("pause", function() {
-    // Cambiar el src o inicializar HLS/DASH puede disparar una pausa antes del primer play.
     if (playbackStarted && !video.ended) {
         centerPlay.classList.add("visible");
     } else {
@@ -784,17 +772,11 @@ video.addEventListener("pause", function() {
 });
 
 video.addEventListener("ended", function() {
-    if (!introPlayed) {
-        introPlayed = true;
-        ejecutarContenidoReal();
-        return;
-    }
     centerPlay.classList.remove("visible");
     playBtn.innerText = "▶";
     playBtn.classList.add("paused-frame");
 });
 
-// ===== Sincronización Visual de Volumen =====
 function syncVolumeVisuals(vol, isMuted) {
     if (volumeSlider) {
         volumeSlider.value = isMuted ? '0' : String(vol);
@@ -812,7 +794,6 @@ function syncVolumeVisuals(vol, isMuted) {
     }
 }
 
-// ===== Mute / Unmute inteligente con clic =====
 muteBtn.onclick = function(e) {
     e.stopPropagation();
     var currentlyMuted = externalAudioEl ? externalAudioEl.muted : video.muted;
@@ -837,13 +818,11 @@ muteBtn.onclick = function(e) {
     }
 };
 
-// En móviles: primer toque abre/cierra la cápsula vertical
 volumeContainer.addEventListener('click', function(e) {
     if (e.target === volumeSlider) return;
     volumeContainer.classList.toggle('active');
 });
 
-// ===== Volume Slider Progresivo Vertical =====
 volumeSlider.oninput = function(e) {
     var v = Math.min(1, Math.max(0, parseFloat(e.target.value)));
     video.volume = v;
@@ -856,13 +835,11 @@ volumeSlider.oninput = function(e) {
     syncVolumeVisuals(v, v === 0);
 };
 
-// ===== Fullscreen =====
 fullscreenBtn.onclick = function() {
     if (!document.fullscreenElement) player.requestFullscreen().catch(function(){});
     else document.exitFullscreen();
 };
 
-// ===== Progress =====
 video.ontimeupdate = function() {
     if (video.duration) {
         bar.style.width = (video.currentTime / video.duration) * 100 + "%";
@@ -881,7 +858,6 @@ progress.onclick = function(e) {
     video.currentTime = ((e.clientX - rect.left) / rect.width) * video.duration;
 };
 
-// ===== Speed =====
 speedBtn.onclick = function() {
     var cur = SPEEDS.indexOf(playbackRate);
     var next = (cur + 1) % SPEEDS.length;
@@ -892,7 +868,6 @@ speedBtn.onclick = function() {
     showToast('Velocidad: ' + playbackRate + 'x');
 };
 
-// ===== PiP =====
 if (document.pictureInPictureEnabled) {
     pipBtn.style.display = '';
 }
@@ -902,10 +877,6 @@ pipBtn.onclick = function() {
         else video.requestPictureInPicture();
     } catch(e) { showToast('PiP no disponible'); }
 };
-
-// ============================================================
-// SISTEMA DE AUDIO E IDIOMA
-// ============================================================
 
 function loadExternalAudioFile() {
     var input = document.createElement('input');
@@ -1123,10 +1094,6 @@ function updateLangBadge() {
     }
 }
 
-// ============================================================
-// SISTEMA DE SUBTÍTULOS
-// ============================================================
-
 function detectSubtitleTracks() {
     availableSubs = [];
     
@@ -1333,10 +1300,6 @@ function updateSubBadge() {
     }
 }
 
-// ============================================================
-// MENÚ DE CONFIGURACIÓN
-// ============================================================
-
 function buildMenu() {
     var html = '';
     
@@ -1521,7 +1484,6 @@ function bindMenuEvents() {
     });
 }
 
-// ===== Settings toggle =====
 settingsBtn.onclick = function(e) {
     e.stopPropagation();
     menuPage = 'main';
@@ -1541,10 +1503,6 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// ============================================================
-// AUTO-HIDE CONTROLES
-// ============================================================
-
 var hideTimer = null;
 var mouseOverUI = false;
 
@@ -1560,7 +1518,6 @@ centerPlay.addEventListener('mouseleave', function() { mouseOverUI = false; });
 function showAllControls() {
     controls.classList.add("show");
 
-    // No enseñar el botón central durante la carga inicial ni mientras reproduce.
     if (playbackStarted && video.paused && !video.ended) {
         centerPlay.classList.add("visible");
     } else {
@@ -1583,10 +1540,6 @@ function showAllControls() {
 ['mousemove','click','touchstart','keydown'].forEach(function(evt) {
     player.addEventListener(evt, showAllControls);
 });
-
-// ============================================================
-// TECLADO
-// ============================================================
 
 document.addEventListener('keydown', function(e) {
     if (tipoCont === 'embed' || tipoCont === 'drive' || tipoCont === 'vacio') return;
@@ -1623,24 +1576,13 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ============================================================
-// EJECUTAR CONTENIDO
+// CARGA Y PREPARACIÓN DEL CONTENIDO REAL EN SEGUNDO PLANO
 // ============================================================
 
-function reproducirIntroLuegoContenido() {
-    video.style.display = 'block';
-    controls.style.display = 'block';
-    video.src = INTRO_URL;
-    video.play().catch(function(){});
-    showAllControls();
-}
-
-function ejecutarContenidoReal() {
-    // Reiniciar el estado para cada contenido: no mostrar Play central durante la carga.
+function prepararPeliculaEnSegundoPlano() {
     playbackStarted = false;
     centerPlay.classList.remove("visible");
     wrapperExterno.style.display = 'none';
-    video.style.display = 'none';
-    controls.style.display = 'none';
     
     if (tipoCont === "drive") {
         wrapperExterno.style.display = 'block';
@@ -1650,9 +1592,8 @@ function ejecutarContenidoReal() {
         iframe.src = videoUrl + (videoUrl.includes('?') ? '&' : '?') + 'autoplay=1';
     } else if (tipoCont === "mp4") {
         video.style.display = 'block';
-        controls.style.display = 'block';
         video.src = videoUrl;
-        video.play().catch(function(){});
+        video.load(); // Se precarga mientras corre la intro
         detectAudioTracks();
         detectSubtitleTracks();
         parsedSubs.forEach(function(ps) {
@@ -1660,7 +1601,6 @@ function ejecutarContenidoReal() {
         });
     } else if (tipoCont === "hls") {
         video.style.display = 'block';
-        controls.style.display = 'block';
         if (Hls.isSupported()) {
             hlsPlayer = new Hls({
                 maxBufferLength: 30,
@@ -1670,7 +1610,6 @@ function ejecutarContenidoReal() {
             hlsPlayer.loadSource(videoUrl);
             hlsPlayer.attachMedia(video);
             hlsPlayer.on(Hls.Events.MANIFEST_PARSED, function() {
-                video.play().catch(function(){});
                 detectAudioTracks();
                 detectSubtitleTracks();
                 parsedSubs.forEach(function(ps) {
@@ -1685,27 +1624,9 @@ function ejecutarContenidoReal() {
                 detectSubtitleTracks();
                 buildMenu();
             });
-            hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
-                if (data.fatal) {
-                    switch(data.type) {
-                        case Hls.ErrorTypes.NETWORK_ERROR:
-                            showToast('⚠️ Error de red, reintentando...');
-                            hlsPlayer.startLoad();
-                            break;
-                        case Hls.ErrorTypes.MEDIA_ERROR:
-                            showToast('⚠️ Error media, recuperando...');
-                            hlsPlayer.recoverMediaError();
-                            break;
-                        default:
-                            showToast('❌ Error fatal');
-                            hlsPlayer.destroy();
-                            break;
-                    }
-                }
-            });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = videoUrl;
-            video.play().catch(function(){});
+            video.load();
             setTimeout(function() {
                 detectAudioTracks();
                 detectSubtitleTracks();
@@ -1716,9 +1637,8 @@ function ejecutarContenidoReal() {
         }
     } else if (tipoCont === "dash") {
         video.style.display = 'block';
-        controls.style.display = 'block';
         dashPlayer = dashjs.MediaPlayer().create();
-        dashPlayer.initialize(video, videoUrl, true);
+        dashPlayer.initialize(video, videoUrl, false);
         dashPlayer.updateSettings({ streaming: { text: { defaultEnabled: true } } });
         setTimeout(function() {
             detectAudioTracks();
@@ -1732,43 +1652,61 @@ function ejecutarContenidoReal() {
         iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin');
         iframe.src = videoUrl;
     }
-    
-    video.onerror = function() {
-        var err = video.error;
-        var msg = '⚠️ Error al reproducir el video';
-        if (err) {
-            if (err.code === 4) {
-                msg = '⚠️ Formato o códec no soportado por este navegador (en MKV el navegador no suele admitir el códec de audio o contenedor; usa MP4 o HLS)';
-            } else if (err.code === 2) {
-                msg = '⚠️ Error de red al cargar el video';
-            } else if (err.code === 3) {
-                msg = '⚠️ Error de decodificación en el video';
-            }
-        }
-        showToast(msg, 4500);
-    };
-
-    if (tipoCont === 'mp4' || tipoCont === 'hls' || tipoCont === 'dash') {
-        video.onloadedmetadata = function() {
-            detectAudioTracks();
-            detectSubtitleTracks();
-            buildMenu();
-        };
-        video.onloadeddata = function() {
-            detectAudioTracks();
-            detectSubtitleTracks();
-            buildMenu();
-        };
-        showAllControls();
-    }
 }
 
-function iniciarReproduccion() {
-    if (!introPlayed) {
-        reproducirIntroLuegoContenido();
-    } else {
-        ejecutarContenidoReal();
+function iniciarPeliculaTransicionElegante() {
+    videoIntro.classList.add('fade-out');
+    
+    setTimeout(function() {
+        videoIntro.style.display = 'none';
+        videoIntro.pause();
+        
+        if (tipoCont === 'mp4' || tipoCont === 'hls' || tipoCont === 'dash') {
+            controls.style.display = 'block';
+            video.play().catch(function(){});
+            showAllControls();
+        }
+    }, 500); // 500ms de desvanecimiento suave a negro
+}
+
+// ============================================================
+// SISTEMA DE REPRODUCCIÓN DE INTRO OBLIGATORIA (ESTILO NETFLIX)
+// ============================================================
+
+function iniciarSecuenciaIntro() {
+    videoIntro.style.display = 'block';
+    videoIntro.classList.remove('fade-out');
+    videoIntro.currentTime = 0;
+    
+    // 1. Iniciar intro
+    var p = videoIntro.play();
+    if (p !== undefined) {
+        p.catch(function() {
+            // Si el móvil bloquea el autoplay con sonido, silenciamos e intentamos
+            videoIntro.muted = true;
+            videoIntro.play().catch(function() {
+                iniciarPeliculaTransicionElegante();
+            });
+        });
     }
+
+    // 2. Precargar película en segundo plano mientras corre la intro
+    prepararPeliculaEnSegundoPlano();
+
+    // 3. Control de desvanecimiento (Fade Out de 0.5s al final de la intro)
+    videoIntro.ontimeupdate = function() {
+        if (videoIntro.duration && (videoIntro.duration - videoIntro.currentTime) <= 0.6) {
+            if (!videoIntro.dataset.fading) {
+                videoIntro.dataset.fading = "true";
+                videoIntro.classList.add('fade-out');
+            }
+        }
+    };
+
+    // 4. Cuando la intro termina, dar paso a la película sin delay
+    videoIntro.onended = function() {
+        iniciarPeliculaTransicionElegante();
+    };
 }
 
 // ============================================================
@@ -1803,7 +1741,7 @@ document.getElementById('btn-entrar').onclick = function() {
             if (timeLeft <= 0) {
                 clearInterval(countdown);
                 adBtn.style.display = 'none';
-                iniciarReproduccion();
+                iniciarSecuenciaIntro();
             }
         }, 1000);
 
@@ -1811,29 +1749,13 @@ document.getElementById('btn-entrar').onclick = function() {
             if (timeLeft <= 15) {
                 clearInterval(countdown);
                 adBtn.style.display = 'none';
-                iniciarReproduccion();
+                iniciarSecuenciaIntro();
             }
         };
     } else {
-        iniciarReproduccion();
+        iniciarSecuenciaIntro();
     }
 };
-
-// INICIO AUTOMÁTICO PARA STREAMS HLS (.m3u8)
-// Los navegadores normalmente solo permiten autoplay si el video comienza silenciado.
-if (tipoCont === 'hls') {
-    video.muted = false;
-    video.defaultMuted = false;
-    video.removeAttribute('muted');
-    video.setAttribute('playsinline', '');
-
-    overlay.style.display = 'none';
-
-    video.volume = 1;
-    syncVolumeVisuals(1, false);
-
-    iniciarReproduccion();
-}
 
 // Sincronizar estado inicial de volumen
 syncVolumeVisuals(video.volume, video.muted);
