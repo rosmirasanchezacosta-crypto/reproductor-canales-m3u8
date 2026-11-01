@@ -605,6 +605,9 @@ video, iframe {
 // KikeFlix Player PRO
 // ============================================================
 
+var INTRO_URL = "https://raw.githubusercontent.com/rosmirasanchezacosta-crypto/reproductor-canales-m3u8/main/intro-negra.mp4";
+var introPlayed = false;
+
 var video = document.getElementById("video"),
     playBtn = document.getElementById("playBtn"),
     muteBtn = document.getElementById("muteBtn"),
@@ -781,6 +784,11 @@ video.addEventListener("pause", function() {
 });
 
 video.addEventListener("ended", function() {
+    if (!introPlayed) {
+        introPlayed = true;
+        ejecutarContenidoReal();
+        return;
+    }
     centerPlay.classList.remove("visible");
     playBtn.innerText = "▶";
     playBtn.classList.add("paused-frame");
@@ -1618,6 +1626,14 @@ document.addEventListener('keydown', function(e) {
 // EJECUTAR CONTENIDO
 // ============================================================
 
+function reproducirIntroLuegoContenido() {
+    video.style.display = 'block';
+    controls.style.display = 'block';
+    video.src = INTRO_URL;
+    video.play().catch(function(){});
+    showAllControls();
+}
+
 function ejecutarContenidoReal() {
     // Reiniciar el estado para cada contenido: no mostrar Play central durante la carga.
     playbackStarted = false;
@@ -1747,6 +1763,14 @@ function ejecutarContenidoReal() {
     }
 }
 
+function iniciarReproduccion() {
+    if (!introPlayed) {
+        reproducirIntroLuegoContenido();
+    } else {
+        ejecutarContenidoReal();
+    }
+}
+
 // ============================================================
 // OVERLAY ENTRADA + PUBLICIDAD UNIFICADA
 // ============================================================
@@ -1779,7 +1803,7 @@ document.getElementById('btn-entrar').onclick = function() {
             if (timeLeft <= 0) {
                 clearInterval(countdown);
                 adBtn.style.display = 'none';
-                ejecutarContenidoReal();
+                iniciarReproduccion();
             }
         }, 1000);
 
@@ -1787,11 +1811,11 @@ document.getElementById('btn-entrar').onclick = function() {
             if (timeLeft <= 15) {
                 clearInterval(countdown);
                 adBtn.style.display = 'none';
-                ejecutarContenidoReal();
+                iniciarReproduccion();
             }
         };
     } else {
-        ejecutarContenidoReal();
+        iniciarReproduccion();
     }
 };
 
@@ -1808,7 +1832,7 @@ if (tipoCont === 'hls') {
     video.volume = 1;
     syncVolumeVisuals(1, false);
 
-    ejecutarContenidoReal();
+    iniciarReproduccion();
 }
 
 // Sincronizar estado inicial de volumen
