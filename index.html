@@ -1521,8 +1521,27 @@ document.addEventListener('keydown', function(e) {
     // Controles de video directos
     e.preventDefault();
 
-    switch(action) {
+     switch(action) {
         case 'ok':
+            // Si hay un botón de los controles enfocado, ACTIVARLO
+            var focused = document.activeElement;
+            var isControlButton = focused && 
+                                  focused !== document.body && 
+                                  focused !== video &&
+                                  (focused.tagName === 'BUTTON' || 
+                                   focused.getAttribute('tabindex') === '0') &&
+                                  (controls.contains(focused) || 
+                                   settingsMenu.contains(focused) ||
+                                   focused === btnBackTv ||
+                                   focused === adBtn);
+            
+            if (isControlButton) {
+                focused.click();  // Activar el botón enfocado
+            } else {
+                togglePlay();  // Si no hay botón enfocado, play/pause
+            }
+            showAllControls();
+            break;
         case 'playpause':
             togglePlay();
             showAllControls();
