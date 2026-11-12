@@ -136,6 +136,14 @@ video, iframe {
     box-shadow: 0 0 12px rgba(188, 19, 254, 0.45);
     background: rgba(142, 68, 173, 0.12);
 }
+
+/* Botón salir dentro de la barra de comandos */
+#exitIframeBtn {
+    border: 1px solid rgba(188, 19, 254, 0.55);
+    background: rgba(142, 68, 173, 0.18);
+    font-weight: bold;
+}
+
 .progress { 
     width: 100%; 
     height: 5px; 
@@ -307,6 +315,7 @@ video, iframe {
     0%, 100% { box-shadow: 0 0 18px rgba(188, 19, 254, 0.5); }
     50% { box-shadow: 0 0 28px rgba(188, 19, 254, 0.85); }
 }
+
 /* ============================================================
    CONTROL DE VOLUMEN
    ============================================================ */
@@ -336,7 +345,6 @@ video, iframe {
     padding: 10px 0;
     box-sizing: border-box;
 }
-
 .volume-slider-wrapper::after {
     content: '';
     position: absolute;
@@ -345,7 +353,6 @@ video, iframe {
     width: 100%;
     height: 15px;
 }
-
 .volume-container:hover .volume-slider-wrapper,
 .volume-container.active .volume-slider-wrapper {
     display: flex;
@@ -386,13 +393,11 @@ video, iframe {
     box-shadow: 0 0 10px rgba(188, 19, 254, 0.9);
     transition: transform 0.15s ease;
 }
-
 #volumeSlider::-webkit-slider-thumb:hover {
     transform: scale(1.2);
     background: #bc13fe;
     border-color: #ffffff;
 }
-
 #volumeSlider::-moz-range-thumb {
     width: 16px;
     height: 16px;
@@ -469,7 +474,6 @@ video, iframe {
 .settings-item.selected {
     background: rgba(188,19,254,0.15);
 }
-/* FOCO D-PAD en items del menú */
 .settings-item:focus,
 .settings-item.tv-focused {
     background: rgba(188, 19, 254, 0.45) !important;
@@ -757,6 +761,7 @@ body.tv-mode .center-play::before {
         
         <div style="display: flex; justify-content: space-between; align-items: center; color: white; margin-top: 5px;">
             <div style="display: flex; align-items: center;">
+                <button class="btn" id="exitIframeBtn" type="button" title="Salir del reproductor" aria-label="Salir del reproductor">←</button>
                 <button class="btn" id="playBtn" type="button" aria-label="Reproducir/Pausar">▶</button>
                 <div class="volume-container" id="volumeContainer">
                     <button class="btn" id="muteBtn" type="button" style="margin-right: 0;" aria-label="Silenciar">🔊</button>
@@ -786,6 +791,7 @@ body.tv-mode .center-play::before {
 var video = document.getElementById("video"),
     videoIntro = document.getElementById("videoIntro"),
     blackScreen = document.getElementById("blackScreen"),
+    exitIframeBtn = document.getElementById("exitIframeBtn"),
     playBtn = document.getElementById("playBtn"),
     muteBtn = document.getElementById("muteBtn"),
     fullscreenBtn = document.getElementById("fullscreenBtn"),
@@ -815,6 +821,9 @@ var video = document.getElementById("video"),
 
 // ===== DETECCIÓN DE TV =====
 var isTV = false;
+var isInIframe = false;
+try { isInIframe = (window.self !== window.top); } catch(e) { isInIframe = true; }
+
 function detectTV() {
     var ua = navigator.userAgent.toLowerCase();
     var tvKeywords = ['tv', 'smarttv', 'googletv', 'hbbtv', 'netcast', 'tizen',
@@ -828,7 +837,7 @@ function detectTV() {
         ('ontouchstart' in window) === false && !navigator.maxTouchPoints) {
         isTV = true;
     }
-    if (isTV) {
+    if (isTV && !isInIframe) {
         document.body.classList.add('tv-mode');
         if (btnBackTv) btnBackTv.style.display = 'flex';
     }
@@ -944,6 +953,12 @@ function togglePlay() {
 
 playBtn.onclick = togglePlay;
 centerPlay.onclick = togglePlay;
+if (exitIframeBtn) {
+    exitIframeBtn.onclick = function(e) {
+        e.stopPropagation();
+        closePlayerAndReturn();
+    };
+}
 
 video.addEventListener("play", function() {
     centerPlay.classList.remove("visible");
@@ -1377,7 +1392,6 @@ function showAllControls() {
             controls.classList.remove("show"); centerPlay.classList.remove("visible");
             settingsContainer.classList.remove('active'); volumeContainer.classList.remove('active');
         } else if (isTV && playbackStarted) {
-            // En TV los controles se quedan visibles más tiempo
             hideTimer = setTimeout(function() {
                 if (!video.paused) { controls.classList.remove("show"); centerPlay.classList.remove("visible"); }
             }, 5000);
@@ -1393,47 +1407,23 @@ function showAllControls() {
 // 🎮 SISTEMA D-PAD COMPLETO (Multi-plataforma)
 // ============================================================
 
-// Mapa universal de keycodes para TODAS las plataformas TV
 var DPAD_KEYS = {
-    // Estándar web
     'ArrowUp': 'up', 'ArrowDown': 'down', 'ArrowLeft': 'left', 'ArrowRight': 'right',
     'Enter': 'ok', ' ': 'ok', 'Escape': 'back', 'Backspace': 'back',
-    // Android TV / Fire TV (keyCodes numéricos)
     19: 'up', 20: 'down', 21: 'left', 22: 'right',
-    23: 'ok',    // DPAD_CENTER
-    66: 'ok',    // ENTER
-    4: 'back',   // BACK
-    85: 'playpause', // MEDIA_PLAY_PAUSE
-    89: 'rewind',    // MEDIA_REWIND
-    90: 'fastforward', // MEDIA_FAST_FORWARD
-    86: 'stop',      // MEDIA_STOP
-    24: 'volup',     // VOLUME_UP
-    25: 'voldown',   // VOLUME_DOWN
-    164: 'mute',     // VOLUME_MUTE
-    // Samsung Tizen
-    10009: 'back',   // RETURN
-    10182: 'back',   // EXIT
-    10252: 'playpause',
-    10232: 'rewind',
-    10233: 'fastforward',
-    // LG webOS
-    461: 'back',     // BACK
-    415: 'playpause',
-    412: 'rewind',
-    417: 'fastforward',
-    413: 'stop'
+    23: 'ok', 66: 'ok', 4: 'back',
+    85: 'playpause', 89: 'rewind', 90: 'fastforward', 86: 'stop',
+    24: 'volup', 25: 'voldown', 164: 'mute',
+    10009: 'back', 10182: 'back', 10252: 'playpause', 10232: 'rewind', 10233: 'fastforward',
+    461: 'back', 415: 'playpause', 412: 'rewind', 417: 'fastforward', 413: 'stop'
 };
 
 function getDpadAction(e) {
-    // Primero buscar por e.key
     if (e.key && DPAD_KEYS[e.key]) return DPAD_KEYS[e.key];
-    // Luego por e.keyCode
     if (e.keyCode && DPAD_KEYS[e.keyCode]) return DPAD_KEYS[e.keyCode];
     return null;
 }
 
-// Navegación espacial entre botones de control en TV
-var controlButtons = [];
 function getControlButtons() {
     if (!controls.classList.contains('show')) return [];
     var btns = Array.from(controls.querySelectorAll('button, [tabindex="0"]'));
@@ -1452,7 +1442,6 @@ function findNextControl(direction) {
     if (direction === 'right') return btns[(idx + 1) % btns.length];
     if (direction === 'left') return btns[(idx - 1 + btns.length) % btns.length];
 
-    // Arriba/Abajo: navegar en el menú de settings si está abierto
     if (settingsContainer.classList.contains('active')) {
         var items = Array.from(settingsMenu.querySelectorAll('[tabindex="0"]'));
         var curIdx = items.indexOf(current);
@@ -1469,11 +1458,14 @@ document.addEventListener('keydown', function(e) {
     var action = getDpadAction(e);
     if (!action) return;
 
-    // Si el overlay de entrada está visible, solo OK funciona
+    // Si el overlay de entrada está visible, OK entra y BACK sale
     if (overlay && overlay.style.display !== 'none') {
         if (action === 'ok') {
             e.preventDefault();
             document.getElementById('btn-entrar').click();
+        } else if (action === 'back') {
+            e.preventDefault();
+            closePlayerAndReturn();
         }
         return;
     }
@@ -1521,9 +1513,8 @@ document.addEventListener('keydown', function(e) {
     // Controles de video directos
     e.preventDefault();
 
-     switch(action) {
+    switch(action) {
         case 'ok':
-            // Si hay un botón de los controles enfocado, ACTIVARLO
             var focused = document.activeElement;
             var isControlButton = focused && 
                                   focused !== document.body && 
@@ -1536,9 +1527,9 @@ document.addEventListener('keydown', function(e) {
                                    focused === adBtn);
             
             if (isControlButton) {
-                focused.click();  // Activar el botón enfocado
+                focused.click();
             } else {
-                togglePlay();  // Si no hay botón enfocado, play/pause
+                togglePlay();
             }
             showAllControls();
             break;
@@ -1616,10 +1607,18 @@ document.addEventListener('keydown', function(e) {
 
 // ===== FUNCIÓN PARA CERRAR Y VOLVER =====
 function closePlayerAndReturn() {
-    // Intentar comunicar con la app padre (KikeFlix)
+    // Pausa el video y audio antes de liberar el foco al padre
+    try {
+        video.pause();
+        if (externalAudioEl) externalAudioEl.pause();
+        if (document.fullscreenElement) document.exitFullscreen().catch(function(){});
+    } catch(e) {}
+
+    // Comunicar con la página/app padre (Protocolo Candela o KikeFlix)
     try {
         if (window.parent && window.parent !== window) {
             window.parent.postMessage({ type: 'kikeflix-player-close' }, '*');
+            window.parent.postMessage({ type: 'KF_SALIR_VIDEO' }, '*');
             return;
         }
     } catch(e) {}
@@ -1645,7 +1644,6 @@ btnBackTv.onclick = function() { closePlayerAndReturn(); };
 window.addEventListener('message', function(e) {
     if (!e.data) return;
 
-    // Recibir teclas D-PAD desde la app padre
     if (e.data.type === 'dpad-key') {
         var fakeEvent = { key: e.data.key, keyCode: e.data.keyCode, preventDefault: function(){} };
         var action = getDpadAction(fakeEvent);
@@ -1656,13 +1654,11 @@ window.addEventListener('message', function(e) {
         return;
     }
 
-    // Comando directo de cerrar desde la app padre
     if (e.data.type === 'kikeflix-close-player') {
         closePlayerAndReturn();
         return;
     }
 
-    // Comando para cargar nuevo video desde la app padre
     if (e.data.type === 'kikeflix-load-video' && e.data.url) {
         videoUrl = e.data.url;
         tipoCont = tipo(videoUrl);
@@ -1671,12 +1667,12 @@ window.addEventListener('message', function(e) {
     }
 });
 
-// Avisar a la app padre que el reproductor está listo
 try {
     if (window.parent && window.parent !== window) {
         window.parent.postMessage({ type: 'kikeflix-player-ready' }, '*');
     }
 } catch(e) {}
+
 // ============================================================
 // CARGA Y PREPARACIÓN DEL CONTENIDO (DRIVE + MP4 + HLS + DASH + EMBED)
 // ============================================================
@@ -1686,7 +1682,6 @@ function prepararPeliculaEnSegundoPlano() {
     centerPlay.classList.remove("visible");
     wrapperExterno.style.display = 'none';
 
-    // GOOGLE DRIVE
     if (tipoCont === "drive") {
         wrapperExterno.style.display = 'block';
         iframe.removeAttribute('sandbox');
@@ -1694,14 +1689,15 @@ function prepararPeliculaEnSegundoPlano() {
         var driveUrl = videoUrl;
         if (driveUrl.includes("/view")) driveUrl = driveUrl.replace("/view", "/preview");
         iframe.src = driveUrl + (driveUrl.includes('?') ? '&' : '?') + 'autoplay=1';
-        // En modo TV, mostrar controles básicos sobre el iframe
-        if (isTV) {
+        if (isTV || isInIframe) {
             controls.style.display = 'block';
+            controls.classList.add('show');
             playBtn.style.display = 'none';
             muteBtn.style.display = 'none';
             volumeContainer.style.display = 'none';
             speedBtn.style.display = 'none';
             pipBtn.style.display = 'none';
+            if (exitIframeBtn) exitIframeBtn.focus();
         }
         setTimeout(function() {
             blackScreen.classList.add('fade-out');
@@ -1711,18 +1707,19 @@ function prepararPeliculaEnSegundoPlano() {
             }, 400);
         }, 1500);
     }
-    // EMBED (otros iframes)
     else if (tipoCont === "embed") {
         wrapperExterno.style.display = 'block';
         iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin');
         iframe.src = videoUrl;
-        if (isTV) {
+        if (isTV || isInIframe) {
             controls.style.display = 'block';
+            controls.classList.add('show');
             playBtn.style.display = 'none';
             muteBtn.style.display = 'none';
             volumeContainer.style.display = 'none';
             speedBtn.style.display = 'none';
             pipBtn.style.display = 'none';
+            if (exitIframeBtn) exitIframeBtn.focus();
         }
         setTimeout(function() {
             blackScreen.classList.add('fade-out');
@@ -1732,7 +1729,6 @@ function prepararPeliculaEnSegundoPlano() {
             }, 400);
         }, 1500);
     }
-    // MP4 directo
     else if (tipoCont === "mp4") {
         video.style.display = 'block';
         video.src = videoUrl;
@@ -1741,7 +1737,6 @@ function prepararPeliculaEnSegundoPlano() {
         detectSubtitleTracks();
         parsedSubs.forEach(function(ps) { loadExternalSubtitleUrl(ps.url, ps.label); });
     }
-    // HLS
     else if (tipoCont === "hls") {
         video.style.display = 'block';
         if (typeof Hls !== 'undefined' && Hls.isSupported()) {
@@ -1768,7 +1763,6 @@ function prepararPeliculaEnSegundoPlano() {
             }, 2000);
         }
     }
-    // DASH
     else if (tipoCont === "dash") {
         video.style.display = 'block';
         if (typeof dashjs !== 'undefined') {
@@ -1796,8 +1790,8 @@ function iniciarPeliculaTransicionElegante() {
             video.play().catch(function(){});
             showAllControls();
 
-            // En TV, enfocar el botón de play automáticamente
-            if (isTV) {
+            // Enfocar el botón de play automáticamente en TV o dentro de iframe
+            if (isTV || isInIframe) {
                 setTimeout(function() { playBtn.focus(); }, 300);
             }
         }
@@ -1865,8 +1859,7 @@ document.getElementById('btn-entrar').onclick = function() {
             } else {
                 adBtn.className = 'ad-skippable';
                 adText.innerHTML = 'Saltar Anuncio ⏭';
-                // En TV, enfocar el botón de saltar automáticamente
-                if (isTV) adBtn.focus();
+                if (isTV || isInIframe) adBtn.focus();
             }
             if (timeLeft <= 0) {
                 clearInterval(countdown);
@@ -1887,12 +1880,12 @@ document.getElementById('btn-entrar').onclick = function() {
     }
 };
 
-// En TV, enfocar el botón de entrada automáticamente
-if (isTV) {
+// Enfocar el botón de entrada automáticamente en TV o dentro de iframe
+if (isTV || isInIframe) {
     setTimeout(function() {
         var btnEntrar = document.getElementById('btn-entrar');
         if (btnEntrar) btnEntrar.focus();
-    }, 500);
+    }, 300);
 }
 
 syncVolumeVisuals(video.volume, video.muted);
