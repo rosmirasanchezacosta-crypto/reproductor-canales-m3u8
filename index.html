@@ -144,12 +144,26 @@ video, iframe {
     font-weight: bold;
 }
 
+.progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.time-label {
+    font-size: 12px;
+    color: rgba(255,255,255,0.8);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+}
 .progress { 
-    width: 100%; 
+    flex: 1;
+    min-width: 0;
     height: 5px; 
     background: rgba(255,255,255,0.15); 
     cursor: pointer; 
-    margin-bottom: 10px; 
+    margin-bottom: 0; 
     border-radius: 3px; 
     overflow: hidden; 
     position: relative;
@@ -647,9 +661,13 @@ body.tv-mode .speed-btn {
 body.tv-mode .controls {
     padding: 25px;
 }
+body.tv-mode .progress-row {
+    gap: 14px;
+    margin-bottom: 15px;
+}
 body.tv-mode .progress {
     height: 8px;
-    margin-bottom: 15px;
+    margin-bottom: 0;
 }
 body.tv-mode .progress:focus,
 body.tv-mode .progress.tv-focused {
@@ -681,10 +699,12 @@ body.tv-mode .center-play::before {
 
 /* Diseño responsivo móvil */
 @media(max-width:600px){
-    .btn { font-size: 16px; min-width: 36px; height: 36px; margin-right: 8px; }
-    .speed-btn { font-size: 11px; padding: 3px 6px; margin-right: 8px; }
+    .btn { font-size: 15px; min-width: 32px; height: 34px; margin-right: 4px; padding: 0 5px; }
+    .speed-btn { font-size: 11px; padding: 3px 6px; margin-right: 6px; }
     .controls { padding: 10px 10px 12px; }
-    .progress { margin-bottom: 8px; }
+    .progress-row { gap: 8px; margin-bottom: 8px; }
+    .progress { margin-bottom: 0; }
+    .time-label { font-size: 11px; }
 
     .settings-menu {
         min-width: 0;
@@ -758,7 +778,11 @@ body.tv-mode .center-play::before {
     <div class="toast-msg" id="toastMsg"></div>
 
     <div class="controls" id="custom-controls" style="display: none;">
-        <div class="progress" id="progress" tabindex="0" role="slider" aria-label="Progreso del video"><div class="progress-buffer" id="bufferBar"></div><div class="progress-bar" id="bar"></div></div>
+        <div class="progress-row" id="progressRow">
+            <span class="time-label" id="currentTime">0:00</span>
+            <div class="progress" id="progress" tabindex="0" role="slider" aria-label="Progreso del video"><div class="progress-buffer" id="bufferBar"></div><div class="progress-bar" id="bar"></div></div>
+            <span class="time-label" id="totalTime">0:00</span>
+        </div>
         
         <div style="display: flex; justify-content: space-between; align-items: center; color: white; margin-top: 5px;">
             <div style="display: flex; align-items: center;">
@@ -772,7 +796,6 @@ body.tv-mode .center-play::before {
                         <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="1" orient="vertical">
                     </div>
                 </div>
-                <span style="font-size: 12px; margin-right: 12px; opacity: 0.7;"><span id="currentTime">0:00</span> / <span id="totalTime">0:00</span></span>
             </div>
             <div style="display: flex; align-items: center;">
                 <button class="speed-btn" id="speedBtn" type="button" title="Velocidad">1x</button>
@@ -2083,6 +2106,8 @@ function prepararPeliculaEnSegundoPlano(autoPlayNow) {
     wrapperExterno.style.display = 'none';
     bloqueoFlecha.style.display = 'none';
     video.style.display = 'none';
+   var pr = document.getElementById('progressRow');
+    if (pr) pr.style.display = '';
     if (rewBtn) rewBtn.style.display = '';
     if (fwdBtn) fwdBtn.style.display = '';
     playBtn.style.display = '';
@@ -2101,6 +2126,7 @@ function prepararPeliculaEnSegundoPlano(autoPlayNow) {
         if (isTV || isInIframe) {
             controls.style.display = 'block';
             controls.classList.add('show');
+            if (pr) pr.style.display = 'none';
             if (rewBtn) rewBtn.style.display = 'none';
             if (fwdBtn) fwdBtn.style.display = 'none';
             playBtn.style.display = 'none';
@@ -2125,6 +2151,7 @@ function prepararPeliculaEnSegundoPlano(autoPlayNow) {
         if (isTV || isInIframe) {
             controls.style.display = 'block';
             controls.classList.add('show');
+           if (pr) pr.style.display = 'none';
             if (rewBtn) rewBtn.style.display = 'none';
             if (fwdBtn) fwdBtn.style.display = 'none';
             playBtn.style.display = 'none';
