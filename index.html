@@ -728,29 +728,7 @@ body.tv-mode .center-play::before {
     .toast-msg { font-size: 12px; padding: 9px 14px; }
 }
 
-/* Indicador ligero de carga/buffering (sin assets externos) */
-.buffer-loader {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    border: 4px solid rgba(188, 19, 254, 0.2);
-    border-top-color: #bc13fe;
-    z-index: 45;
-    display: none;
-    pointer-events: none;
-    animation: kfSpin 0.8s linear infinite;
-    box-shadow: 0 0 20px rgba(188, 19, 254, 0.35);
-}
-.buffer-loader.visible {
-    display: block;
-}
-@keyframes kfSpin {
-    to { transform: translate(-50%, -50%) rotate(360deg); }
-}
+
 </style>
 </head>
 <body oncontextmenu="return false">
@@ -771,11 +749,9 @@ body.tv-mode .center-play::before {
     
     <div id="blackScreen"></div>
 
-    <video id="videoIntro" style="display: none;" playsinline webkit-playsinline preload="auto" src="https://raw.githubusercontent.com/rosmirasanchezacosta-crypto/reproductor-canales-m3u8/main/intro-negra.mp4"></video>
+    <video id="videoIntro" style="display: none;" playsinline webkit-playsinline src="https://raw.githubusercontent.com/rosmirasanchezacosta-crypto/reproductor-canales-m3u8/main/intro-negra.mp4"></video>
 
-    <video id="video" style="display: none;" playsinline webkit-playsinline preload="auto"></video>
-    
-    <div id="bufferLoader" class="buffer-loader" aria-hidden="true"></div>
+    <video id="video" style="display: none;" playsinline webkit-playsinline></video>
     <button id="centerPlay" class="center-play" type="button"></button>
     <div class="lang-badge" id="langBadge"></div>
     <div class="sub-badge" id="subBadge">CC</div>
@@ -787,7 +763,9 @@ body.tv-mode .center-play::before {
         <div style="display: flex; justify-content: space-between; align-items: center; color: white; margin-top: 5px;">
             <div style="display: flex; align-items: center;">
                 <button class="btn" id="exitIframeBtn" type="button" title="Salir del reproductor" aria-label="Salir del reproductor">←</button>
+                <button class="btn" id="rewBtn" type="button" title="Retroceder 30s" aria-label="Retroceder 30 segundos">⏪</button>
                 <button class="btn" id="playBtn" type="button" aria-label="Reproducir/Pausar">▶</button>
+                <button class="btn" id="fwdBtn" type="button" title="Adelantar 30s" aria-label="Adelantar 30 segundos">⏩</button>
                 <div class="volume-container" id="volumeContainer">
                     <button class="btn" id="muteBtn" type="button" style="margin-right: 0;" aria-label="Silenciar">🔊</button>
                     <div class="volume-slider-wrapper">
@@ -817,6 +795,8 @@ var video = document.getElementById("video"),
     videoIntro = document.getElementById("videoIntro"),
     blackScreen = document.getElementById("blackScreen"),
     exitIframeBtn = document.getElementById("exitIframeBtn"),
+    rewBtn = document.getElementById("rewBtn"),
+    fwdBtn = document.getElementById("fwdBtn"),
     playBtn = document.getElementById("playBtn"),
     muteBtn = document.getElementById("muteBtn"),
     fullscreenBtn = document.getElementById("fullscreenBtn"),
@@ -840,7 +820,6 @@ var video = document.getElementById("video"),
     langBadge = document.getElementById("langBadge"),
     subBadge = document.getElementById("subBadge"),
     toastMsg = document.getElementById("toastMsg"),
-    bufferLoader = document.getElementById("bufferLoader"),
     speedBtn = document.getElementById("speedBtn"),
     pipBtn = document.getElementById("pipBtn"),
     btnBackTv = document.getElementById("btn-back-tv");
@@ -944,11 +923,181 @@ var mp4StallTimer = null;
 var mp4StallRetries = 0;
 var hlsNetworkRetries = 0;
 var hlsMediaRetries = 0;
+var watchdogTimer = null;
+var lastWatchTime = -1;
+var lastProgressAt = 0;
+var lastStableAt = 0;
+var lastSavedAt = 0;
+var resumeApplied = false;
+var pendingResumeTarget = null;
+var pendingSeekTarget = null;
+var isClosingPlayer = false;
+var seekBurstCount = 0;
+var seekBurstDir = 0;
+var seekBurstTimer = null;
 
-function setBuffering(active) {
-    if (!bufferLoader) return;
-    if (active) bufferLoader.classList.add('visible');
-    else bufferLoader.classList.remove('visible');
+function setBuffering(active) {}
+
+function getProgressStorageKey(url) {
+    if (!url) return null;
+    var hash = 0;
+    for (var i = 0; i < url.length; i++) {
+        hash = ((hash << 5) - hash) + url.charCodeAt(i);
+        hash |= 0;
+    }
+    return 'kf_prog_' + Math.abs(hash) + '_' + url.length;
+}
+
+function savePlaybackProgress(force) {
+    if (!videoUrl || (tipoCont !== 'mp4' && tipoCont !== 'hls' && tipoCont !== 'dash')) return;
+    var t = video.currentTime || 0;
+    var d = video.duration || 0;
+    var key = getProgressStorageKey(videoUrl);
+    if (!key) return;
+    var now = Date.now();
+    if (!force && (now - lastSavedAt) < 4000) return;
+    lastSavedAt = now;
+    try {
+        if (d > 0 && t >= d * 0.95) {
+            localStorage.removeItem(key);
+        } else if (t > 15) {
+            localStorage.setItem(key, JSON.stringify({ t: Math.floor(t), ts: now }));
+        }
+    } catch(e) {}
+}
+
+function clearSavedProgress() {
+    var key = getProgressStorageKey(videoUrl);
+    if (!key) return;
+    try { localStorage.removeItem(key); } catch(e) {}
+}
+
+function readSavedProgress() {
+    var key = getProgressStorageKey(videoUrl);
+    if (!key) return 0;
+    try {
+        var raw = localStorage.getItem(key);
+        if (!raw) return 0;
+        var parsed = JSON.parse(raw);
+        return (parsed && parsed.t > 15) ? parsed.t : 0;
+    } catch(e) { return 0; }
+}
+
+function applySavedOrPendingSeek(fromPlayingEvent) {
+    if (!video || (tipoCont !== 'mp4' && tipoCont !== 'hls' && tipoCont !== 'dash')) return;
+    var dur = video.duration;
+    if (pendingSeekTarget !== null && pendingSeekTarget > 0) {
+        var target = (dur && isFinite(dur)) ? Math.min(dur - 1, pendingSeekTarget) : pendingSeekTarget;
+        pendingSeekTarget = null;
+        if (target > 0) {
+            try { video.currentTime = target; } catch(e) {}
+            if (externalAudioEl) { try { externalAudioEl.currentTime = target; } catch(e) {} }
+        }
+        return;
+    }
+    if (!resumeApplied) {
+        var saved = readSavedProgress();
+        if (saved > 15 && (!dur || !isFinite(dur) || saved < dur * 0.95)) {
+            pendingResumeTarget = saved;
+            if ((video.currentTime || 0) < 5) {
+                try { video.currentTime = saved; } catch(e) {}
+                if (externalAudioEl) { try { externalAudioEl.currentTime = saved; } catch(e) {} }
+            }
+            if (fromPlayingEvent && introFinished) {
+                resumeApplied = true;
+                pendingResumeTarget = null;
+                showToast('⏮ Continuando desde ' + formatTime(saved), 2500);
+            }
+        } else {
+            resumeApplied = true;
+            pendingResumeTarget = null;
+        }
+    } else if (fromPlayingEvent && pendingResumeTarget && (video.currentTime || 0) < 5) {
+        var t2 = pendingResumeTarget;
+        pendingResumeTarget = null;
+        try { video.currentTime = t2; } catch(e) {}
+        if (externalAudioEl) { try { externalAudioEl.currentTime = t2; } catch(e) {} }
+        if (introFinished) showToast('⏮ Continuando desde ' + formatTime(t2), 2500);
+    }
+}
+
+function seekRelative(baseSeconds, focusBar) {
+    if (tipoCont === 'embed' || tipoCont === 'drive' || tipoCont === 'vacio') return;
+    var dir = baseSeconds >= 0 ? 1 : -1;
+    clearTimeout(seekBurstTimer);
+    if (seekBurstDir === dir) seekBurstCount++;
+    else { seekBurstDir = dir; seekBurstCount = 1; }
+    seekBurstTimer = setTimeout(function() { seekBurstCount = 0; seekBurstDir = 0; }, 1300);
+
+    var step = Math.abs(baseSeconds);
+    if (Math.abs(baseSeconds) <= 20) {
+        if (seekBurstCount >= 6) step = 60;
+        else if (seekBurstCount >= 3) step = 30;
+    }
+    var delta = dir * step;
+    var cur = video.currentTime || 0;
+    var dur = (video.duration && isFinite(video.duration)) ? video.duration : 0;
+    var target = Math.max(0, cur + delta);
+    if (dur > 1) target = Math.min(dur - 0.5, target);
+
+    try { video.currentTime = target; } catch(e) {}
+    if (externalAudioEl) { try { externalAudioEl.currentTime = target; } catch(e) {} }
+    if (dur > 0) {
+        bar.style.width = (target / dur) * 100 + "%";
+        document.getElementById("currentTime").innerText = formatTime(target);
+        document.getElementById("totalTime").innerText = formatTime(dur);
+    }
+    savePlaybackProgress(true);
+    showToast((dir > 0 ? '⏩ +' : '⏪ -') + step + 's · ' + formatTime(target), 1200);
+    showAllControls();
+    if (focusBar && progress) { try { progress.focus(); } catch(e) {} }
+}
+
+function startWatchdog() {
+    stopWatchdog();
+    lastWatchTime = video.currentTime || 0;
+    lastProgressAt = Date.now();
+    lastStableAt = Date.now();
+    watchdogTimer = setInterval(function() {
+        if (!video || video.paused || video.ended) {
+            lastProgressAt = Date.now();
+            return;
+        }
+        if (tipoCont !== 'mp4' && tipoCont !== 'hls' && tipoCont !== 'dash') return;
+        var cur = video.currentTime || 0;
+        var now = Date.now();
+        if (Math.abs(cur - lastWatchTime) > 0.25) {
+            lastWatchTime = cur;
+            lastProgressAt = now;
+            if ((now - lastStableAt) > 15000) mp4StallRetries = 0;
+            return;
+        }
+        // Si lleva >= 12s congelado (18s en arranque inicial) sin avanzar ni un fotograma
+        var stallLimit = playbackStarted ? 12000 : 18000;
+        if ((now - lastProgressAt) >= stallLimit) {
+            lastProgressAt = now;
+            lastStableAt = now;
+            if (tipoCont === 'hls' && hlsPlayer && hlsNetworkRetries < 6) {
+                hlsNetworkRetries++;
+                showToast('🔄 Reconectando señal...', 2000);
+                try { hlsPlayer.startLoad(cur > 0 ? cur : -1); } catch(e) {}
+            } else if (tipoCont === 'mp4' && mp4StallRetries < 6) {
+                mp4StallRetries++;
+                if (cur > 0) pendingSeekTarget = cur;
+                showToast('🔄 Reconectando en ' + formatTime(cur) + '...', 2500);
+                try {
+                    video.src = videoUrl;
+                    video.load();
+                    video.play().catch(function(){});
+                } catch(e) {}
+            }
+        }
+    }, 3000);
+}
+
+function stopWatchdog() {
+    clearInterval(watchdogTimer);
+    watchdogTimer = null;
 }
 
 function loadScriptOnce(src, checkFn, queueName) {
@@ -1003,19 +1152,20 @@ function liberarIntro() {
         videoIntro.onended = null;
         videoIntro.onerror = null;
         videoIntro.pause();
-        videoIntro.removeAttribute('src');
-        videoIntro.load();
     } catch(e) {}
     videoIntro.style.display = 'none';
 }
 
-function limpiarReproductor() {
+function limpiarReproductor(resetVideoSrc) {
+    stopWatchdog();
     clearTimeout(mp4StallTimer);
     mp4StallTimer = null;
     mp4StallRetries = 0;
     hlsNetworkRetries = 0;
     hlsMediaRetries = 0;
-    setBuffering(false);
+    resumeApplied = false;
+    pendingResumeTarget = null;
+    pendingSeekTarget = null;
 
     if (hlsPlayer) {
         try { hlsPlayer.destroy(); } catch(e) {}
@@ -1037,12 +1187,16 @@ function limpiarReproductor() {
         var oldTracks = video.querySelectorAll('track');
         for (var i = 0; i < oldTracks.length; i++) oldTracks[i].remove();
     } catch(e) {}
-    try {
-        video.pause();
-        video.removeAttribute('src');
-        video.load();
-    } catch(e) {}
-    if (iframe) {
+    if (resetVideoSrc) {
+        try {
+            if (video.getAttribute('src')) {
+                video.pause();
+                video.removeAttribute('src');
+                video.load();
+            }
+        } catch(e) {}
+    }
+    if (iframe && iframe.getAttribute('src') && iframe.getAttribute('src') !== 'about:blank') {
         try { iframe.src = 'about:blank'; } catch(e) {}
     }
 }
@@ -1089,6 +1243,8 @@ function togglePlay() {
 
 playBtn.onclick = togglePlay;
 centerPlay.onclick = togglePlay;
+if (rewBtn) rewBtn.onclick = function(e) { e.stopPropagation(); seekRelative(-30); };
+if (fwdBtn) fwdBtn.onclick = function(e) { e.stopPropagation(); seekRelative(30); };
 if (exitIframeBtn) {
     exitIframeBtn.onclick = function(e) {
         e.stopPropagation();
@@ -1096,17 +1252,19 @@ if (exitIframeBtn) {
     };
 }
 
+video.addEventListener("loadedmetadata", function() {
+    applySavedOrPendingSeek(false);
+});
 video.addEventListener("play", function() {
     centerPlay.classList.remove("visible");
     playBtn.innerText = "⏸";
     playBtn.classList.add("paused-frame");
-    if (video.readyState < 3) setBuffering(true);
+    startWatchdog();
 });
 video.addEventListener("playing", function() {
     playbackStarted = true;
-    mp4StallRetries = 0;
-    clearTimeout(mp4StallTimer);
-    setBuffering(false);
+    applySavedOrPendingSeek(true);
+    startWatchdog();
     centerPlay.classList.remove("visible");
     playBtn.innerText = "⏸";
     playBtn.classList.add("paused-frame");
@@ -1116,62 +1274,38 @@ video.addEventListener("playing", function() {
         blackScreen.classList.remove('fade-out');
     }, 400);
 });
-video.addEventListener("canplay", function() {
-    setBuffering(false);
-});
-video.addEventListener("waiting", function() {
-    if (!video.paused && !video.ended) {
-        setBuffering(true);
-        programarRecuperacionStall();
-    }
-});
-video.addEventListener("stalled", function() {
-    if (!video.paused && !video.ended) {
-        setBuffering(true);
-        programarRecuperacionStall();
-    }
-});
 video.addEventListener("pause", function() {
-    clearTimeout(mp4StallTimer);
-    setBuffering(false);
+    savePlaybackProgress(true);
     if (playbackStarted && !video.ended) centerPlay.classList.add("visible");
     else centerPlay.classList.remove("visible");
     playBtn.innerText = "▶";
     playBtn.classList.add("paused-frame");
 });
 video.addEventListener("ended", function() {
-    clearTimeout(mp4StallTimer);
-    setBuffering(false);
+    stopWatchdog();
+    clearSavedProgress();
     centerPlay.classList.remove("visible");
     playBtn.innerText = "▶";
     playBtn.classList.add("paused-frame");
 });
 video.addEventListener("error", function() {
-    clearTimeout(mp4StallTimer);
-    setBuffering(false);
-    if (video.getAttribute('src') && (tipoCont === 'mp4' || tipoCont === 'hls' || tipoCont === 'dash')) {
-        showToast('Error al cargar el video. Verifica tu conexión.', 3000);
+    if (!isClosingPlayer && video.getAttribute('src') && (tipoCont === 'mp4' || tipoCont === 'hls' || tipoCont === 'dash')) {
+        if (tipoCont === 'mp4' && mp4StallRetries < 4) {
+            mp4StallRetries++;
+            pendingSeekTarget = video.currentTime || readSavedProgress() || 0;
+            showToast('🔄 Reconectando video...', 2500);
+            setTimeout(function() {
+                try {
+                    video.src = videoUrl;
+                    video.load();
+                    video.play().catch(function(){});
+                } catch(e) {}
+            }, 1500);
+        } else {
+            showToast('Error al cargar el video. Verifica tu conexión.', 3000);
+        }
     }
 });
-
-function programarRecuperacionStall() {
-    clearTimeout(mp4StallTimer);
-    if (tipoCont !== 'mp4' || mp4StallRetries >= 3) return;
-    mp4StallTimer = setTimeout(function() {
-        if (!video || video.paused || video.ended || video.readyState >= 3) return;
-        mp4StallRetries++;
-        try {
-            var pos = video.currentTime;
-            if (video.readyState === 0) {
-                video.load();
-                if (pos > 0) video.currentTime = pos;
-            } else if (pos > 0) {
-                video.currentTime = pos + 0.05;
-            }
-            video.play().catch(function(){});
-        } catch(e) {}
-    }, 9000);
-}
 
 // ===== VOLUMEN =====
 function syncVolumeVisuals(vol, isMuted) {
@@ -1227,6 +1361,7 @@ video.ontimeupdate = function() {
         bar.style.width = (video.currentTime / video.duration) * 100 + "%";
         document.getElementById("currentTime").innerText = formatTime(video.currentTime);
         document.getElementById("totalTime").innerText = formatTime(video.duration);
+        savePlaybackProgress(false);
     }
 };
 video.onprogress = function() {
@@ -1481,8 +1616,7 @@ function updateSubBadge() {
     subBadge.style.display = (currentSubIdx >= 0) ? 'block' : 'none';
     if (currentSubIdx >= 0) setTimeout(function() { subBadge.style.display = 'none'; }, 4000);
 }
-
-// ===== MENÚ DE AJUSTES =====
+    // ===== MENÚ DE AJUSTES =====
 function buildMenu() {
     var html = '';
     if (menuPage === 'main') {
@@ -1618,38 +1752,41 @@ function getControlButtons() {
 }
 
 function findNextControl(direction) {
-    var btns = getControlButtons();
-    if (!btns.length) return null;
-    var current = document.activeElement;
-    var idx = btns.indexOf(current);
-    if (idx === -1) return btns[0];
-
-    if (direction === 'right') return btns[(idx + 1) % btns.length];
-    if (direction === 'left') return btns[(idx - 1 + btns.length) % btns.length];
-
     if (settingsContainer.classList.contains('active')) {
         var items = Array.from(settingsMenu.querySelectorAll('[tabindex="0"]'));
-        var curIdx = items.indexOf(current);
-        if (curIdx !== -1) {
-            if (direction === 'down') return items[(curIdx + 1) % items.length];
-            if (direction === 'up') return items[(curIdx - 1 + items.length) % items.length];
-        }
+        var curMenuIdx = items.indexOf(document.activeElement);
+        if (direction === 'down') return items[(curMenuIdx + 1) % items.length] || null;
+        if (direction === 'up') return items[(curMenuIdx - 1 + items.length) % items.length] || null;
+        return null;
     }
+    var btns = getControlButtons().filter(function(b) { return b !== progress; });
+    if (!btns.length) return null;
+    var current = document.activeElement;
+    if (direction === 'up') {
+        if (current !== progress && progress && progress.offsetParent !== null) return progress;
+        return null;
+    }
+    if (direction === 'down') {
+        if (current === progress) return (playBtn && btns.indexOf(playBtn) !== -1) ? playBtn : btns[0];
+        return null;
+    }
+    var idx = btns.indexOf(current);
+    if (idx === -1) return (playBtn && btns.indexOf(playBtn) !== -1) ? playBtn : btns[0];
+    if (direction === 'right') return btns[(idx + 1) % btns.length];
+    if (direction === 'left') return btns[(idx - 1 + btns.length) % btns.length];
     return null;
 }
 
-// Handler principal del D-PAD
-document.addEventListener('keydown', function(e) {
-    var action = getDpadAction(e);
+function handleDpadAction(action, e) {
     if (!action) return;
 
     // Si el overlay de entrada está visible, OK entra y BACK sale
     if (overlay && overlay.style.display !== 'none') {
         if (action === 'ok') {
-            e.preventDefault();
+            if (e) e.preventDefault();
             document.getElementById('btn-entrar').click();
         } else if (action === 'back') {
-            e.preventDefault();
+            if (e) e.preventDefault();
             closePlayerAndReturn();
         }
         return;
@@ -1658,7 +1795,7 @@ document.addEventListener('keydown', function(e) {
     // Si la publicidad está activa
     if (adBtn && adBtn.style.display !== 'none' && adBtn.classList.contains('ad-skippable')) {
         if (action === 'ok') {
-            e.preventDefault();
+            if (e) e.preventDefault();
             adBtn.click();
             return;
         }
@@ -1667,19 +1804,19 @@ document.addEventListener('keydown', function(e) {
     // Si el menú de settings está abierto
     if (settingsContainer.classList.contains('active')) {
         if (action === 'back') {
-            e.preventDefault();
+            if (e) e.preventDefault();
             if (menuPage !== 'main') { menuPage = 'main'; buildMenu(); }
             else settingsContainer.classList.remove('active');
             return;
         }
         if (action === 'up' || action === 'down') {
-            e.preventDefault();
+            if (e) e.preventDefault();
             var next = findNextControl(action);
             if (next) next.focus();
             return;
         }
         if (action === 'ok') {
-            e.preventDefault();
+            if (e) e.preventDefault();
             var focused = document.activeElement;
             if (focused && focused.click) focused.click();
             return;
@@ -1689,28 +1826,27 @@ document.addEventListener('keydown', function(e) {
     // Si estamos en modo embed/drive (iframe), solo back funciona
     if (tipoCont === 'embed' || tipoCont === 'drive' || tipoCont === 'vacio') {
         if (action === 'back') {
-            e.preventDefault();
+            if (e) e.preventDefault();
             closePlayerAndReturn();
         }
         return;
     }
 
-    // Controles de video directos
-    e.preventDefault();
+    if (e) e.preventDefault();
 
     switch(action) {
         case 'ok':
             var focused = document.activeElement;
-            var isControlButton = focused && 
-                                  focused !== document.body && 
+            var isControlButton = focused &&
+                                  focused !== document.body &&
                                   focused !== video &&
-                                  (focused.tagName === 'BUTTON' || 
+                                  focused !== progress &&
+                                  (focused.tagName === 'BUTTON' ||
                                    focused.getAttribute('tabindex') === '0') &&
-                                  (controls.contains(focused) || 
+                                  (controls.contains(focused) ||
                                    settingsMenu.contains(focused) ||
                                    focused === btnBackTv ||
                                    focused === adBtn);
-            
             if (isControlButton) {
                 focused.click();
             } else {
@@ -1722,32 +1858,33 @@ document.addEventListener('keydown', function(e) {
             togglePlay();
             showAllControls();
             break;
-        case 'left':
         case 'rewind':
-            if (controls.classList.contains('show') && document.activeElement !== document.body) {
+            seekRelative(-15, true);
+            break;
+        case 'fastforward':
+            seekRelative(15, true);
+            break;
+        case 'left':
+            if (controls.classList.contains('show') && document.activeElement !== progress && document.activeElement !== document.body) {
                 var prev = findNextControl('left');
-                if (prev) { prev.focus(); return; }
+                if (prev) { prev.focus(); showAllControls(); return; }
             }
-            video.currentTime = Math.max(0, video.currentTime - 10);
-            showToast('⏪ -10s');
-            showAllControls();
+            seekRelative(-15, true);
             break;
         case 'right':
-        case 'fastforward':
-            if (controls.classList.contains('show') && document.activeElement !== document.body) {
+            if (controls.classList.contains('show') && document.activeElement !== progress && document.activeElement !== document.body) {
                 var nxt = findNextControl('right');
-                if (nxt) { nxt.focus(); return; }
+                if (nxt) { nxt.focus(); showAllControls(); return; }
             }
-            video.currentTime = Math.min(video.duration || 0, video.currentTime + 10);
-            showToast('⏩ +10s');
-            showAllControls();
+            seekRelative(15, true);
             break;
         case 'up':
-        case 'volup':
             if (controls.classList.contains('show')) {
                 var upBtn = findNextControl('up');
-                if (upBtn) { upBtn.focus(); return; }
+                if (upBtn) { upBtn.focus(); showAllControls(); return; }
             }
+            /* falls through a subir volumen si la barra está oculta */
+        case 'volup':
             var newUp = Math.min(1, Math.round((video.volume + 0.05) * 100) / 100);
             video.volume = newUp; video.muted = false; lastNonZeroVolume = newUp;
             if (externalAudioEl) { externalAudioEl.volume = newUp; externalAudioEl.muted = false; }
@@ -1756,11 +1893,12 @@ document.addEventListener('keydown', function(e) {
             showAllControls();
             break;
         case 'down':
-        case 'voldown':
             if (controls.classList.contains('show')) {
                 var downBtn = findNextControl('down');
-                if (downBtn) { downBtn.focus(); return; }
+                if (downBtn) { downBtn.focus(); showAllControls(); return; }
             }
+            /* falls through a bajar volumen si la barra está oculta */
+        case 'voldown':
             var newDown = Math.max(0, Math.round((video.volume - 0.05) * 100) / 100);
             video.volume = newDown; video.muted = (newDown === 0);
             if (newDown > 0) lastNonZeroVolume = newDown;
@@ -1788,15 +1926,30 @@ document.addEventListener('keydown', function(e) {
             }
             break;
     }
+}
+
+// Handler principal del D-PAD
+document.addEventListener('keydown', function(e) {
+    var action = getDpadAction(e);
+    if (action) handleDpadAction(action, e);
 });
 
 // ===== FUNCIÓN PARA CERRAR Y VOLVER =====
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden) savePlaybackProgress(true);
+});
+window.addEventListener('pagehide', function() {
+    savePlaybackProgress(true);
+});
+
 function closePlayerAndReturn() {
-    // Pausa y libera decodificadores antes de liberar el foco al padre
+    // Guarda posición actual y libera decodificadores antes de volver
+    isClosingPlayer = true;
     try {
+        savePlaybackProgress(true);
         clearTimeout(prepTimer);
         liberarIntro();
-        limpiarReproductor();
+        limpiarReproductor(true);
         if (document.fullscreenElement) document.exitFullscreen().catch(function(){});
     } catch(e) {}
 
@@ -1831,12 +1984,9 @@ window.addEventListener('message', function(e) {
     if (!e.data) return;
 
     if (e.data.type === 'dpad-key') {
-        var fakeEvent = { key: e.data.key, keyCode: e.data.keyCode, preventDefault: function(){} };
+        var fakeEvent = { key: e.data.key, keyCode: e.data.keyCode };
         var action = getDpadAction(fakeEvent);
-        if (action) {
-            var realEvent = new KeyboardEvent('keydown', { key: e.data.key, keyCode: e.data.keyCode });
-            document.dispatchEvent(realEvent);
-        }
+        if (action) handleDpadAction(action, null);
         return;
     }
 
@@ -1868,15 +2018,10 @@ try {
 function iniciarHlsOptimizado(autoPlayNow) {
     if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         hlsPlayer = new Hls({
-            enableWorker: true,
-            lowLatencyMode: false,
-            backBufferLength: 20,
-            maxBufferLength: 25,
-            maxMaxBufferLength: 45,
-            maxBufferSize: 35 * 1000 * 1000,
-            maxBufferHole: 0.5,
+            backBufferLength: 15,
+            maxBufferLength: 30,
+            maxMaxBufferLength: 60,
             startLevel: -1,
-            abrEwmaDefaultEstimate: 2500000,
             manifestLoadingTimeOut: 15000,
             manifestLoadingMaxRetry: 4,
             levelLoadingTimeOut: 15000,
@@ -1927,16 +2072,19 @@ function iniciarHlsOptimizado(autoPlayNow) {
 
 function prepararPeliculaEnSegundoPlano(autoPlayNow) {
     if (moviePrepared && !autoPlayNow) return;
+    isClosingPlayer = false;
     moviePrepared = true;
     clearTimeout(prepTimer);
     prepTimer = null;
 
-    limpiarReproductor();
+    limpiarReproductor(!!autoPlayNow);
     playbackStarted = false;
     centerPlay.classList.remove("visible");
     wrapperExterno.style.display = 'none';
     bloqueoFlecha.style.display = 'none';
     video.style.display = 'none';
+    if (rewBtn) rewBtn.style.display = '';
+    if (fwdBtn) fwdBtn.style.display = '';
     playBtn.style.display = '';
     muteBtn.style.display = '';
     volumeContainer.style.display = '';
@@ -1953,6 +2101,8 @@ function prepararPeliculaEnSegundoPlano(autoPlayNow) {
         if (isTV || isInIframe) {
             controls.style.display = 'block';
             controls.classList.add('show');
+            if (rewBtn) rewBtn.style.display = 'none';
+            if (fwdBtn) fwdBtn.style.display = 'none';
             playBtn.style.display = 'none';
             muteBtn.style.display = 'none';
             volumeContainer.style.display = 'none';
@@ -1975,6 +2125,8 @@ function prepararPeliculaEnSegundoPlano(autoPlayNow) {
         if (isTV || isInIframe) {
             controls.style.display = 'block';
             controls.classList.add('show');
+            if (rewBtn) rewBtn.style.display = 'none';
+            if (fwdBtn) fwdBtn.style.display = 'none';
             playBtn.style.display = 'none';
             muteBtn.style.display = 'none';
             volumeContainer.style.display = 'none';
@@ -2117,11 +2269,9 @@ function iniciarSecuenciaIntro() {
         });
     }
 
-    // Escalonar la preparación de la película (2.2s después) para no saturar Wi-Fi ni MediaCodec durante el arranque de la intro
+    // Preparar la película desde t=0 para aprovechar toda la intro cargando búfer inicial
     clearTimeout(prepTimer);
-    prepTimer = setTimeout(function() {
-        if (!introFinished) prepararPeliculaEnSegundoPlano(false);
-    }, 2200);
+    prepararPeliculaEnSegundoPlano(false);
 
     // Red de seguridad por si la intro falla en cargar o queda trabada en TV Box
     clearTimeout(introSafetyTimer);
