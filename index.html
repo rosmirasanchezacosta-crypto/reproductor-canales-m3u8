@@ -1095,37 +1095,86 @@ function applySavedOrPendingSeek(fromPlayingEvent) {
         }
         return;
     }
-    if (startFromBeginning) {
-        resumeApplied = true;
-        pendingResumeTarget = null;
-        return;
-    }
-    if (!resumeApplied) {
-        var saved = readSavedProgress();
-        if (saved > 15 && (!dur || !isFinite(dur) || saved < dur * 0.95)) {
-            pendingResumeTarget = saved;
-            if ((video.currentTime || 0) < 5) {
-                try { video.currentTime = saved; } catch(e) {}
-                if (externalAudioEl) { try { externalAudioEl.currentTime = saved; } catch(e) {} }
-            }
-            if (fromPlayingEvent && introFinished) {
-                resumeApplied = true;
-                pendingResumeTarget = null;
-                showToast('⏮ Continuando desde ' + formatTime(saved), 2500);
-            }
-        } else {
-            resumeApplied = true;
-            pendingResumeTarget = null;
-        }
-    } else if (fromPlayingEvent && pendingResumeTarget && (video.currentTime || 0) < 5) {
-        var t2 = pendingResumeTarget;
-        pendingResumeTarget = null;
-        try { video.currentTime = t2; } catch(e) {}
-        if (externalAudioEl) { try { externalAudioEl.currentTime = t2; } catch(e) {} }
-        if (introFinished) showToast('⏮ Continuando desde ' + formatTime(t2), 2500);
-    }
 }
 
+function iniciarReproduccionLimpia() {
+    if (tipoCont !== 'mp4' && tipoCont !== 'hls' && tipoCont !== 'dash') return;
+    controls.style.display = 'block';
+    showAllControls();
+
+    var saved = (!startFromBeginning && !resumeApplied) ? readSavedProgress() : 0;
+    var dur = video.duration;
+    var debeReanudar = saved > 15 && (!dur || !isFinite(dur) || saved < dur * 0.95);
+
+    if (!debeReanudar) {
+        resumeApplied = true;
+        pendingResumeTarget = null;
+        if (video.readyState < 3) setBuffering(true);
+        video.play().catch(function(){});
+        if (isTV || isInIframe) setTimeout(function() { playBtn.focus(); }, 300);
+        return;
+    }
+
+    resumeApplied = true;
+    pendingResumeTarget = null;
+    try { video.pause(); } catch(e) {}
+
+    var arrancado = false;
+    var mostrarAviso = true;
+    var seekFallbackTimer = null;
+
+    function arrancarDespuesDeSeek() {
+        if (arrancado) return;
+        arrancado = true;
+        video.removeEventListener('seeked', onSeekedReady);
+        video.removeEventListener('canplay', onCanPlayReady);
+        clearTimeout(seekFallbackTimer);
+        if (externalAudioEl) {
+            try { externalAudioEl.currentTime = video.currentTime || saved; } catch(e) {}
+        }
+        if (mostrarAviso) showToast('⏮ Continuando desde ' + formatTime(saved), 2500);
+        video.play().catch(function(){});
+        if (isTV || isInIframe) setTimeout(function() { playBtn.focus(); }, 300);
+    }
+
+    function onSeekedReady() {
+        if (video.readyState >= 3) {
+            arrancarDespuesDeSeek();
+        } else {
+            video.addEventListener('canplay', onCanPlayReady);
+        }
+    }
+
+    function onCanPlayReady() {
+        arrancarDespuesDeSeek();
+    }
+
+    seekFallbackTimer = setTimeout(arrancarDespuesDeSeek, 3500);
+
+    function ejecutarSalto() {
+        var d2 = video.duration;
+        if (d2 && isFinite(d2) && saved >= d2 * 0.95) {
+            mostrarAviso = false;
+            arrancarDespuesDeSeek();
+            return;
+        }
+        if (Math.abs((video.currentTime || 0) - saved) <= 2) {
+            onSeekedReady();
+            return;
+        }
+        video.addEventListener('seeked', onSeekedReady);
+        try { video.currentTime = saved; } catch(e) { arrancarDespuesDeSeek(); }
+    }
+
+    if (video.readyState >= 1) {
+        ejecutarSalto();
+    } else {
+        video.addEventListener('loadedmetadata', function onMeta() {
+            video.removeEventListener('loadedmetadata', onMeta);
+            ejecutarSalto();
+        });
+    }
+}
 function seekRelative(baseSeconds, focusBar) {
     if (tipoCont === 'embed' || tipoCont === 'drive' || tipoCont === 'vacio') return;
     var dir = baseSeconds >= 0 ? 1 : -1;
@@ -2145,11 +2194,13 @@ try {
 
 function iniciarHlsOptimizado(autoPlayNow) {
     if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+        var hlsStartPos = (!startFromBeginning && !resumeApplied) ? readSavedProgress() : 0;
         hlsPlayer = new Hls({
             backBufferLength: 15,
             maxBufferLength: 30,
             maxMaxBufferLength: 60,
             startLevel: -1,
+            startPosition: (hlsStartPos > 15 ? hlsStartPos : -1),
             manifestLoadingTimeOut: 15000,
             manifestLoadingMaxRetry: 4,
             levelLoadingTimeOut: 15000,
@@ -2163,7 +2214,7 @@ function iniciarHlsOptimizado(autoPlayNow) {
             detectAudioTracks();
             detectSubtitleTracks();
             parsedSubs.forEach(function(ps) { loadExternalSubtitleUrl(ps.url, ps.label); });
-            if (autoPlayNow || introFinished) video.play().catch(function(){});
+            if (autoPlayNow || introFinished) iniciarReproduccionLimpia();
         });
         hlsPlayer.on(Hls.Events.AUDIO_TRACKS_UPDATED, function() { detectAudioTracks(); buildMenu(); });
         hlsPlayer.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, function() { detectSubtitleTracks(); buildMenu(); });
@@ -2274,7 +2325,7 @@ function prepararPeliculaEnSegundoPlano(autoPlayNow) {
             }, 400);
         }, 1500);
     }
-    else if (tipoCont === "mp4") {
+   else if (tipoCont === "mp4") {
         video.style.display = 'block';
         video.src = videoUrl;
         video.load();
@@ -2282,9 +2333,7 @@ function prepararPeliculaEnSegundoPlano(autoPlayNow) {
         detectSubtitleTracks();
         parsedSubs.forEach(function(ps) { loadExternalSubtitleUrl(ps.url, ps.label); });
         if (autoPlayNow) {
-            controls.style.display = 'block';
-            video.play().catch(function(){});
-            showAllControls();
+            iniciarReproduccionLimpia();
         }
     }
     else if (tipoCont === "hls") {
@@ -2350,15 +2399,9 @@ function iniciarPeliculaTransicionElegante() {
         }
 
         if (tipoCont === 'mp4' || tipoCont === 'hls' || tipoCont === 'dash') {
-            controls.style.display = 'block';
-            if (video.readyState < 3) setBuffering(true);
-            video.play().catch(function(){});
-            showAllControls();
-
-            // Enfocar el botón de play automáticamente en TV o dentro de iframe
-            if (isTV || isInIframe) {
-                setTimeout(function() { playBtn.focus(); }, 300);
-            }
+            setTimeout(function() {
+                iniciarReproduccionLimpia();
+            }, 120);
         } else {
             blackScreen.classList.add('fade-out');
             setTimeout(function() {
