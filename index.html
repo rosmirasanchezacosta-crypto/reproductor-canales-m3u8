@@ -273,6 +273,72 @@ video, iframe {
     border-left: 38px solid white; 
     margin-left: 8px; 
 }
+/* Selector Continuar / Empezar de nuevo */
+.resume-box {
+    display: none;
+    width: calc(100% - 32px);
+    max-width: 440px;
+    background: rgba(14, 2, 28, 0.94);
+    border: 1px solid rgba(188, 19, 254, 0.55);
+    border-radius: 18px;
+    padding: 26px 24px;
+    text-align: center;
+    color: #ffffff;
+    box-shadow: 0 0 40px rgba(188, 19, 254, 0.35), 0 12px 32px rgba(0, 0, 0, 0.85);
+    box-sizing: border-box;
+}
+.resume-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.resume-sub {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 20px;
+}
+.resume-sub strong {
+    color: #e07bff;
+}
+.resume-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.resume-btn {
+    flex: 1 1 160px;
+    padding: 13px 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    color: #ffffff;
+    cursor: pointer;
+    border: 2px solid transparent;
+    outline: none;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.resume-btn.primary {
+    background: linear-gradient(135deg, #8e44ad, #bc13fe);
+    box-shadow: 0 0 18px rgba(188, 19, 254, 0.55);
+}
+.resume-btn.secondary {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(188, 19, 254, 0.45);
+}
+.resume-btn:hover,
+.resume-btn:focus,
+.resume-btn.tv-focused {
+    transform: scale(1.06);
+    outline: 3px solid rgba(255, 255, 255, 0.85);
+    outline-offset: 3px;
+    box-shadow: 0 0 28px rgba(188, 19, 254, 0.95);
+}
+body.tv-mode .resume-box { max-width: 540px; padding: 32px; }
+body.tv-mode .resume-title { font-size: 22px; }
+body.tv-mode .resume-sub { font-size: 16px; }
+body.tv-mode .resume-btn { font-size: 17px; padding: 16px 20px; }
 
 /* Botón de publicidad */
 #adBtn {
@@ -761,7 +827,17 @@ body.tv-mode .center-play::before {
     <!-- Botón de volver para TV -->
     <button id="btn-back-tv" type="button" aria-label="Volver">←</button>
 
-    <div id="overlay"><button id="btn-entrar"><div class="play-icon"></div></button></div>
+   <div id="overlay">
+        <button id="btn-entrar"><div class="play-icon"></div></button>
+        <div id="resumeBox" class="resume-box" style="display: none;">
+            <div class="resume-title">¿Cómo deseas reproducir?</div>
+            <div class="resume-sub">Dejaste esta película en <strong id="resumeTimeLabel">0:00</strong></div>
+            <div class="resume-actions">
+                <button type="button" id="btn-resume-continue" class="resume-btn primary">▶ Continuar</button>
+                <button type="button" id="btn-resume-restart" class="resume-btn secondary">↺ Empezar de nuevo</button>
+            </div>
+        </div>
+    </div>
     
     <button id="adBtn" class="ad-counting" style="display: none;"><span id="adText">Publicidad · 21s</span></button>
 
@@ -954,6 +1030,7 @@ var lastSavedAt = 0;
 var resumeApplied = false;
 var pendingResumeTarget = null;
 var pendingSeekTarget = null;
+var startFromBeginning = false;
 var isClosingPlayer = false;
 var seekBurstCount = 0;
 var seekBurstDir = 0;
@@ -1016,6 +1093,11 @@ function applySavedOrPendingSeek(fromPlayingEvent) {
             try { video.currentTime = target; } catch(e) {}
             if (externalAudioEl) { try { externalAudioEl.currentTime = target; } catch(e) {} }
         }
+        return;
+    }
+    if (startFromBeginning) {
+        resumeApplied = true;
+        pendingResumeTarget = null;
         return;
     }
     if (!resumeApplied) {
@@ -1803,8 +1885,31 @@ function findNextControl(direction) {
 function handleDpadAction(action, e) {
     if (!action) return;
 
-    // Si el overlay de entrada está visible, OK entra y BACK sale
+    // Si el overlay de entrada está visible, manejar selector Continuar / Empezar de nuevo + D-PAD
     if (overlay && overlay.style.display !== 'none') {
+        var rBox = document.getElementById('resumeBox');
+        var btnCont = document.getElementById('btn-resume-continue');
+        var btnRest = document.getElementById('btn-resume-restart');
+        var rVisible = rBox && rBox.style.display !== 'none';
+
+        if (rVisible && btnCont && btnRest) {
+            if (action === 'left' || action === 'up') {
+                if (e) e.preventDefault();
+                btnCont.focus();
+            } else if (action === 'right' || action === 'down') {
+                if (e) e.preventDefault();
+                btnRest.focus();
+            } else if (action === 'ok') {
+                if (e) e.preventDefault();
+                if (document.activeElement === btnRest) btnRest.click();
+                else btnCont.click();
+            } else if (action === 'back') {
+                if (e) e.preventDefault();
+                closePlayerAndReturn();
+            }
+            return;
+        }
+
         if (action === 'ok') {
             if (e) e.preventDefault();
             document.getElementById('btn-entrar').click();
@@ -2328,7 +2433,7 @@ function iniciarSecuenciaIntro() {
 // OVERLAY ENTRADA + PUBLICIDAD
 // ============================================================
 
-document.getElementById('btn-entrar').onclick = function() {
+function iniciarEntradaReproductor() {
     overlay.style.display = 'none';
     if (!videoUrl) return;
     preloadEngineIfNeeded();
@@ -2370,15 +2475,53 @@ document.getElementById('btn-entrar').onclick = function() {
     } else {
         iniciarSecuenciaIntro();
     }
+}
+
+var btnEntrarEl = document.getElementById('btn-entrar');
+var resumeBoxEl = document.getElementById('resumeBox');
+var resumeTimeLabelEl = document.getElementById('resumeTimeLabel');
+var btnResumeContinueEl = document.getElementById('btn-resume-continue');
+var btnResumeRestartEl = document.getElementById('btn-resume-restart');
+
+btnEntrarEl.onclick = function() {
+    startFromBeginning = false;
+    iniciarEntradaReproductor();
 };
 
-// Enfocar el botón de entrada automáticamente en TV o dentro de iframe
-if (isTV || isInIframe) {
-    setTimeout(function() {
-        var btnEntrar = document.getElementById('btn-entrar');
-        if (btnEntrar) btnEntrar.focus();
-    }, 300);
+if (btnResumeContinueEl) {
+    btnResumeContinueEl.onclick = function() {
+        startFromBeginning = false;
+        iniciarEntradaReproductor();
+    };
 }
+
+if (btnResumeRestartEl) {
+    btnResumeRestartEl.onclick = function() {
+        startFromBeginning = true;
+        clearSavedProgress();
+        iniciarEntradaReproductor();
+    };
+}
+
+function mostrarOpcionesInicio() {
+    var savedInit = (tipoCont === 'mp4' || tipoCont === 'hls' || tipoCont === 'dash') ? readSavedProgress() : 0;
+    if (savedInit > 15 && resumeBoxEl && btnResumeContinueEl && resumeTimeLabelEl) {
+        btnEntrarEl.style.display = 'none';
+        resumeBoxEl.style.display = 'block';
+        resumeTimeLabelEl.textContent = formatTime(savedInit);
+        btnResumeContinueEl.textContent = '▶ Continuar (' + formatTime(savedInit) + ')';
+        if (isTV || isInIframe) {
+            setTimeout(function() { btnResumeContinueEl.focus(); }, 300);
+        }
+    } else {
+        if (resumeBoxEl) resumeBoxEl.style.display = 'none';
+        btnEntrarEl.style.display = 'flex';
+        if (isTV || isInIframe) {
+            setTimeout(function() { btnEntrarEl.focus(); }, 300);
+        }
+    }
+}
+mostrarOpcionesInicio();
 
 syncVolumeVisuals(video.volume, video.muted);
 </script>
